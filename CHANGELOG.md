@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directory (zsh, nushell, elvish, powershell). `git-id completions <shell>`
   still prints the script to stdout for manual setup.
 
-## [0.1.0] — 2026-06-13
+## [0.1.0]
 
 Initial release.
 
