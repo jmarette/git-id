@@ -44,10 +44,17 @@ pub fn run(env: &Env, args: &CreateArgs) -> Result<ExitCode> {
         }
     };
     let signing_key = match &args.signing_key {
-        Some(v) if !v.is_empty() => Some(v.clone()),
+        Some(v) if !v.is_empty() => {
+            store::validate_signing_key(v)?;
+            Some(v.clone())
+        }
         Some(_) => None,
         None if pure_interactive => {
-            let v = prompt::ask("Signing key (user.signingkey)", true, |_| Ok(()))?;
+            let v = prompt::ask(
+                "Signing key (user.signingkey)",
+                true,
+                store::validate_signing_key,
+            )?;
             if v.is_empty() { None } else { Some(v) }
         }
         None => None,
