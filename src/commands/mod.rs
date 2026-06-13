@@ -29,6 +29,6 @@ pub fn dispatch(env: &Env, cmd: &Cmd) -> Result<ExitCode> {
         Cmd::Unset(args) => unset::run(env, args),
         Cmd::Which(args) => which::run(env, args),
         Cmd::Doctor => doctor::run(env),
-        Cmd::Completions(args) => completions::run(args),
+        Cmd::Completions(args) => completions::run(env, args),
     }
 }

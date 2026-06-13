@@ -14,12 +14,16 @@ use clap::Parser;
 
 fn main() -> ExitCode {
     let cli = cli::Cli::parse();
-    // Completions need no environment; keep them usable even without HOME.
+    // Printing completions needs no environment (no HOME) — keep it usable in
+    // minimal build/packaging setups. Installing them does need paths, so it
+    // falls through to the normal env-backed dispatch below.
     if let cli::Cmd::Completions(args) = &cli.command {
-        return match commands::completions::run(args) {
-            Ok(code) => code,
-            Err(err) => fail(&err),
-        };
+        if args.action.is_none() {
+            return match commands::completions::print(args.shell) {
+                Ok(code) => code,
+                Err(err) => fail(&err),
+            };
+        }
     }
     let env = match env::Env::from_process() {
         Ok(env) => env,

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — Unreleased
+
+### Added
+
+- `git-id completions install [shell]` sets up shell completions
+  automatically: it detects your shell from `$SHELL` (or takes one
+  explicitly), writes the completion script to the right location, and prints
+  the single activation step for shells without a completion autoload
+  directory (zsh, nushell, elvish, powershell). `git-id completions <shell>`
+  still prints the script to stdout for manual setup.
+
 ## [0.1.0] — 2026-06-13
 
 Initial release.
@@ -50,4 +61,5 @@ Initial release.
   formula pushed to the tap.
 - Dual licensed under MIT OR Apache-2.0.
 
+[0.2.0]: https://github.com/jmarette/git-id/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jmarette/git-id/releases/tag/v0.1.0

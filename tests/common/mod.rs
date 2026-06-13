@@ -37,6 +37,7 @@ const SCRUBBED: &[&str] = &[
     "EDITOR",
     "HOME",
     "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
 ];
 
 /// Strip the Windows extended-length prefix (`\\?\` or `\\?\UNC\`) emitted by
@@ -116,6 +117,7 @@ impl TestEnv {
         }
         c.env("HOME", &self.home)
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
+            .env("XDG_DATA_HOME", self.home.join(".local/share"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("LC_ALL", "C")
             .current_dir(&self.home);

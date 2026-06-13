@@ -51,7 +51,8 @@ pub enum Cmd {
     Which(WhichArgs),
     /// Check the git-id setup for problems
     Doctor,
-    /// Generate shell completions (for `git-id ...` invocations)
+    /// Print shell completions, or install them with `completions install`
+    #[command(args_conflicts_with_subcommands = true)]
     Completions(CompletionsArgs),
 }
 
@@ -161,7 +162,7 @@ pub struct WhichArgs {
 
 /// Shells supported by `git-id completions`: the ones natively covered by
 /// clap_complete, plus Nushell via clap_complete_nushell.
-#[derive(Clone, Copy, ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum CompletionShell {
     Bash,
     Elvish,
@@ -173,7 +174,20 @@ pub enum CompletionShell {
 
 #[derive(Args)]
 pub struct CompletionsArgs {
-    /// Shell to generate completions for
+    #[command(subcommand)]
+    pub action: Option<CompletionsAction>,
+    /// Shell to print completions for; auto-detected from $SHELL when omitted
     #[arg(value_enum)]
-    pub shell: CompletionShell,
+    pub shell: Option<CompletionShell>,
+}
+
+#[derive(Subcommand)]
+pub enum CompletionsAction {
+    /// Write the completion script into the right location for the shell,
+    /// printing any one-time activation step
+    Install {
+        /// Shell to target; auto-detected from $SHELL when omitted
+        #[arg(value_enum)]
+        shell: Option<CompletionShell>,
+    },
 }

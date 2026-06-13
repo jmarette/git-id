@@ -102,7 +102,7 @@ guessing one from your hostname.
 | `git id unset [dir]` | Remove the route of a directory. |
 | `git id which [dir]` | Which identity applies here? Shows the matched route and what git actually resolves, and flags local overrides. Alias: `current`. |
 | `git id doctor` | Sanity-check the whole setup (include line, fragments, stale routes, …). |
-| `git id completions <shell>` | Shell completions for `git-id` (bash, zsh, fish, nushell, …). |
+| `git id completions [shell]` | Print shell completions; `--install` writes them into place (bash, zsh, fish, nushell, elvish, powershell). |
 
 Every command has a detailed `--help`.
 
@@ -129,17 +129,28 @@ scripts and hooks.
 
 ### Shell completions
 
-`git-id completions <shell>` prints completions for bash, zsh, fish, nushell,
-elvish and powershell. One-time setup per shell:
+**Automatic (recommended).** Let git-id install them for your shell:
+
+```console
+$ git-id completions install          # detects your shell from $SHELL
+$ git-id completions install zsh      # …or name the shell explicitly
+```
+
+It writes the completion script to the right place and, for shells without a
+completion autoload directory (zsh, nushell, elvish, powershell), prints the
+one line to add to your startup file. bash and fish autoload immediately —
+just restart your shell. Supported shells: bash, zsh, fish, nushell, elvish,
+powershell.
+
+**Manual.** `git-id completions <shell>` prints the script to stdout, so you
+can place it yourself:
 
 ```console
 # bash
-$ mkdir -p ~/.local/share/bash-completion/completions
 $ git-id completions bash > ~/.local/share/bash-completion/completions/git-id
 
-# zsh — then add `fpath+=(~/.zsh/completions)` before compinit in ~/.zshrc
-$ mkdir -p ~/.zsh/completions
-$ git-id completions zsh > ~/.zsh/completions/_git-id
+# zsh — then add `fpath+=(~/.zfunc)` before compinit in ~/.zshrc
+$ git-id completions zsh > ~/.zfunc/_git-id
 
 # fish
 $ git-id completions fish > ~/.config/fish/completions/git-id.fish

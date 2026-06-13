@@ -794,3 +794,39 @@ fn completions_generate_for_bash_and_zsh() {
         assert!(out.contains("git-id"), "empty {shell} completions");
     }
 }
+
+#[test]
+fn completions_install_writes_autoloaded_file() {
+    let t = TestEnv::new();
+    let out = t.ok(&["completions", "install", "fish"]);
+    let f = t.home.join(".config/fish/completions/git-id.fish");
+    assert!(f.exists(), "fish completion file was not written");
+    assert!(t.read(&f).contains("git-id"));
+    assert!(out.contains("fish completions"), "{out}");
+}
+
+#[test]
+fn completions_install_reports_manual_step_for_nushell() {
+    let t = TestEnv::new();
+    let out = t.ok(&["completions", "install", "nushell"]);
+    let f = t.home.join(".config/nushell/completions/git-id.nu");
+    assert!(f.exists(), "nushell completion file was not written");
+    assert!(out.contains("config.nu"), "missing activation hint:\n{out}");
+}
+
+#[test]
+fn completions_install_detects_shell_from_env() {
+    let t = TestEnv::new();
+    t.cmd()
+        .env("SHELL", "/bin/bash")
+        .args(["completions", "install"])
+        .assert()
+        .success();
+    let f = t
+        .home
+        .join(".local/share/bash-completion/completions/git-id");
+    assert!(
+        f.exists(),
+        "bash completion was not written via $SHELL detection"
+    );
+}
