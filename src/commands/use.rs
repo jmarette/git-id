@@ -32,13 +32,28 @@ pub fn run(env: &Env, args: &UseArgs) -> Result<ExitCode> {
         eprintln!(
             "warning: {pretty_dir} does not exist yet — the route is recorded and will apply once it is created"
         );
-    } else if let Some(top) = gitcfg::show_toplevel(&nd.path)? {
-        let top_slash = paths::ensure_trailing_slash(top.to_string_lossy().into_owned());
-        if top_slash != nd.gitdir {
-            eprintln!(
-                "note: {pretty_dir} is inside the repository {} — the route affects repositories under it, not that repository itself",
-                display_pretty(&top_slash, &env.home)
-            );
+    } else {
+        let git_dir = gitcfg::absolute_git_dir(&nd.path)?;
+        let top = gitcfg::show_toplevel(&nd.path)?;
+        // Linked worktrees and submodules: git matches `gitdir:` against the
+        // real .git directory, which lives under the *main* repository — so a
+        // route on this directory's own path is recorded but never applied.
+        if let (Some(gd), Some(top)) = (&git_dir, &top) {
+            if !gd.starts_with(top) {
+                eprintln!(
+                    "warning: {pretty_dir} is a linked worktree or submodule whose git directory is {} — git matches routes against the main repository's location, so this route will NOT apply here; route the main repository instead",
+                    display_pretty(&gd.to_string_lossy(), &env.home)
+                );
+            }
+        }
+        if let Some(top) = &top {
+            let top_slash = paths::ensure_trailing_slash(top.to_string_lossy().into_owned());
+            if top_slash != nd.gitdir {
+                eprintln!(
+                    "note: {pretty_dir} is inside the repository {} — the route affects repositories under it, not that repository itself",
+                    display_pretty(&top_slash, &env.home)
+                );
+            }
         }
     }
 

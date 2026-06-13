@@ -288,6 +288,19 @@ mod tests {
     }
 
     #[test]
+    fn doctor_canonical_comparison_uses_git_path_form() {
+        // doctor recomputes a route's canonical path and compares it to the
+        // stored gitdir. On Windows fs::canonicalize yields `\\?\C:\...`, so the
+        // comparison must go through to_git_path (here: git_path_windows) or a
+        // correct route is falsely flagged as non-canonical. This mirrors the
+        // exact transformation doctor applies.
+        assert_eq!(
+            ensure_trailing_slash(git_path_windows("\\\\?\\C:\\Users\\jane\\dev")),
+            "C:/Users/jane/dev/"
+        );
+    }
+
+    #[test]
     #[cfg(not(windows))]
     fn to_git_path_is_identity_on_unix() {
         // A backslash is a valid filename byte on Unix and must be preserved.

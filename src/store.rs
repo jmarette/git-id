@@ -97,6 +97,19 @@ pub fn validate_user_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// A signing key is free-form (GPG id, SSH key, `key::` spec…), but it must not
+/// carry control characters: a newline in particular would let the value break
+/// out of its line in the rendered fragment and inject an arbitrary gitconfig
+/// section (e.g. `core.sshCommand`). Callers pass only non-empty keys here;
+/// an empty value means "no key" / "remove the key".
+pub fn validate_signing_key(key: &str) -> Result<()> {
+    ensure!(
+        !key.chars().any(char::is_control),
+        "signing key cannot contain control characters"
+    );
+    Ok(())
+}
+
 pub fn fragment_path(env: &Env, name: &str) -> PathBuf {
     env.identities_dir.join(format!("{name}.{FRAGMENT_EXT}"))
 }
@@ -172,12 +185,17 @@ pub fn render_fragment(id: &Identity) -> String {
 }
 
 /// Quote a gitconfig value only when needed (`#`, `;`, quotes, backslashes,
-/// or leading/trailing whitespace would otherwise be mangled by git).
+/// control characters, or leading/trailing whitespace would otherwise be
+/// mangled by — or break out of — the line git reads back). Control characters
+/// are escaped to git's own forms (`\n`, `\t`, `\b`) so the value round-trips
+/// and can never inject a new section; this is defense in depth on top of the
+/// `validate_*` checks, so no field rendered through here can ever inject.
 fn quote_cfg_value(value: &str) -> String {
     let needs_quoting = value.is_empty()
         || value.starts_with([' ', '\t'])
         || value.ends_with([' ', '\t'])
-        || value.contains(['#', ';', '"', '\\']);
+        || value.contains(['#', ';', '"', '\\'])
+        || value.chars().any(char::is_control);
     if !needs_quoting {
         return value.to_string();
     }
@@ -186,6 +204,9 @@ fn quote_cfg_value(value: &str) -> String {
         .flat_map(|c| match c {
             '\\' => vec!['\\', '\\'],
             '"' => vec!['\\', '"'],
+            '\n' => vec!['\\', 'n'],
+            '\t' => vec!['\\', 't'],
+            '\u{8}' => vec!['\\', 'b'],
             c => vec![c],
         })
         .collect();
@@ -196,6 +217,9 @@ pub fn write_new(env: &Env, id: &Identity, force: bool) -> Result<()> {
     validate_slug(&id.name)?;
     validate_user_name(&id.user_name)?;
     validate_email(&id.email)?;
+    if let Some(key) = &id.signing_key {
+        validate_signing_key(key)?;
+    }
     let path = fragment_path(env, &id.name);
     if path.exists() && !force {
         bail!(
@@ -215,12 +239,23 @@ pub fn apply_patch(env: &Env, name: &str, patch: &IdentityPatch) -> Result<()> {
         path.is_file(),
         "identity `{name}` does not exist (see `git-id list`)"
     );
+    // Validate every present field before writing any, so a rejected patch is a
+    // true no-op instead of leaving an earlier field already committed.
     if let Some(user_name) = &patch.user_name {
         validate_user_name(user_name)?;
-        gitcfg::set_file(&path, "user.name", user_name)?;
     }
     if let Some(email) = &patch.email {
         validate_email(email)?;
+    }
+    if let Some(key) = &patch.signing_key {
+        if !key.is_empty() {
+            validate_signing_key(key)?;
+        }
+    }
+    if let Some(user_name) = &patch.user_name {
+        gitcfg::set_file(&path, "user.name", user_name)?;
+    }
+    if let Some(email) = &patch.email {
         gitcfg::set_file(&path, "user.email", email)?;
     }
     if let Some(key) = &patch.signing_key {
@@ -317,6 +352,39 @@ mod tests {
         assert_eq!(quote_cfg_value("a\\b"), "\"a\\\\b\"");
         assert_eq!(quote_cfg_value(" padded "), "\" padded \"");
         assert_eq!(quote_cfg_value("plain name"), "plain name");
+    }
+
+    #[test]
+    fn signing_key_rejects_control_chars() {
+        for ok in ["ABCDEF12", "key::ssh-ed25519 AAAAC3Nza", "0x1234"] {
+            assert!(validate_signing_key(ok).is_ok(), "{ok} should be valid");
+        }
+        assert!(validate_signing_key("KEY\n[core]\n\tsshCommand = x").is_err());
+        assert!(validate_signing_key("a\tb").is_err());
+    }
+
+    #[test]
+    fn render_does_not_inject_a_section_via_control_chars() {
+        // Even if a control-laden value reaches the renderer (validation is the
+        // first line of defense), quoting/escaping must keep it on one line so
+        // git reads it back verbatim and no extra section leaks in.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("x.gitconfig");
+        let id = Identity {
+            name: "x".into(),
+            user_name: "Jane".into(),
+            email: "j@b.co".into(),
+            signing_key: Some("KEY\n[core]\n\tsshCommand = touch PWNED".into()),
+            sign: false,
+        };
+        atomic_write(&path, &render_fragment(&id)).unwrap();
+        assert_eq!(
+            gitcfg::get_file(&path, "user.signingkey")
+                .unwrap()
+                .as_deref(),
+            Some("KEY\n[core]\n\tsshCommand = touch PWNED")
+        );
+        assert_eq!(gitcfg::get_file(&path, "core.sshCommand").unwrap(), None);
     }
 
     #[test]

@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `doctor` no longer reports every routed directory as differing from its
+  canonical path on Windows (it now compares in the same forward-slash,
+  de-UNC'd form routes are stored in).
+- `create`/`edit` reject control characters in a signing key, and rendered
+  fragments escape control characters, closing a gitconfig-section injection
+  via a newline-bearing `--signing-key`.
+- `init`, `doctor` and `uninstall` find the git-id include and
+  `user.useConfigOnly` even when they live in `$XDG_CONFIG_HOME/git/config` and
+  a `~/.gitconfig` is later created; `uninstall` now removes them from whichever
+  global config file holds them.
+- `use` warns when routing a linked worktree's or submodule's own path, where
+  git matches against the main repository and the route would never apply.
+- `edit` validates all fields before writing any, so a rejected edit no longer
+  leaves an earlier field already changed.
+- `delete` rewrites the routes file before removing the fragment, so an
+  interruption cannot leave a route pointing at a deleted fragment.
+- `doctor` also flags a duplicate `gitdir` route when one side is a hand-added
+  (preserved) `[includeIf]` block.
+- `init` no longer overwrites an earlier same-second backup of the global
+  config.
+
 ## [0.2.0]
 
 ### Added
@@ -65,5 +90,6 @@ Initial release.
   formula pushed to the tap.
 - Dual licensed under MIT OR Apache-2.0.
 
+[Unreleased]: https://github.com/jmarette/git-id/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/jmarette/git-id/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jmarette/git-id/releases/tag/v0.1.0

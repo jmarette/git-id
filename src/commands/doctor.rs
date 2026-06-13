@@ -69,14 +69,26 @@ pub fn run(env: &Env) -> Result<ExitCode> {
         ));
     }
 
+    // Hand-added `[includeIf "gitdir:..."]` blocks live in `preserved`; count
+    // them alongside managed entries so a duplicate split across a managed
+    // route and a preserved block (git applies both) is still flagged.
+    let preserved_gitdirs: Vec<String> = model
+        .preserved
+        .iter()
+        .filter_map(|block| block.lines().next())
+        .filter_map(routes::parse_gitdir_header)
+        .collect();
     let mut counts: HashMap<&str, u32> = HashMap::new();
     for entry in &model.entries {
         *counts.entry(entry.gitdir.as_str()).or_insert(0) += 1;
     }
+    for gitdir in &preserved_gitdirs {
+        *counts.entry(gitdir.as_str()).or_insert(0) += 1;
+    }
     for (gitdir, n) in counts {
         if n > 1 {
             d.error(&format!(
-                "{n} routes exist for {gitdir} — run `git-id use` on it again to deduplicate"
+                "{n} routes exist for {gitdir} — git applies all of them (last wins); remove the duplicate `[includeIf]` block(s) from routes.gitconfig"
             ));
         }
     }
@@ -114,7 +126,11 @@ pub fn run(env: &Env) -> Result<ExitCode> {
         } else {
             let (canon, _) =
                 paths::canonicalize_anchored(Path::new(entry.gitdir.trim_end_matches('/')));
-            let canon_slash = paths::ensure_trailing_slash(canon.to_string_lossy().into_owned());
+            // Compare in git-path form (forward slashes, de-UNC'd) so the stored
+            // gitdir is not falsely flagged as non-canonical on Windows, where
+            // fs::canonicalize yields a `\\?\C:\...` path. Identity on Unix.
+            let canon_slash =
+                paths::ensure_trailing_slash(paths::to_git_path(&canon.to_string_lossy()));
             if canon_slash != entry.gitdir {
                 d.warn(&format!(
                     "route {pretty} differs from the directory's canonical path {canon_slash} — git matches canonical paths, re-run `git-id use` on it"
@@ -149,7 +165,7 @@ pub fn run(env: &Env) -> Result<ExitCode> {
         }
     }
 
-    if gitcfg::global_get("user.useConfigOnly")?.as_deref() == Some("true") {
+    if init::useconfigonly_is_enabled(env)? {
         d.ok("user.useConfigOnly is enabled — commits require an explicit identity");
     } else {
         d.info(

@@ -10,14 +10,53 @@ use crate::env::Env;
 use crate::paths::display_pretty;
 use crate::{gitcfg, paths, prompt, routes};
 
+/// The global-level config files git actually reads and that git-id may have
+/// written to, in increasing precedence order, existing files only. Mirrors
+/// git: an explicit `GIT_CONFIG_GLOBAL` is the *only* global file; otherwise
+/// git reads BOTH `$XDG_CONFIG_HOME/git/config` and `~/.gitconfig` (the latter
+/// wins). We scan these directly rather than `git config --global`, because
+/// `--global` resolves to a single file (`~/.gitconfig` once it exists) and so
+/// goes blind to an include we legitimately wrote into the XDG file before
+/// `~/.gitconfig` came to exist.
+pub fn global_config_files(env: &Env) -> Vec<PathBuf> {
+    let candidates = if let Some(global) = &env.git_config_global {
+        vec![global.clone()]
+    } else {
+        vec![
+            env.config_base.join("git").join("config"),
+            env.home.join(".gitconfig"),
+        ]
+    };
+    candidates.into_iter().filter(|p| p.exists()).collect()
+}
+
 /// Whether the global git config already includes our routes file.
 pub fn include_is_installed(env: &Env) -> Result<bool> {
     // Compare in git-path form so a path Git normalized to forward slashes on
     // Windows still matches what we wrote (and stays byte-identical on Unix).
     let want = paths::to_git_path(routes_path_str(env)?);
-    Ok(gitcfg::global_get_all("include.path")?.iter().any(|p| {
-        paths::to_git_path(p) == want || paths::expand_tilde(p, &env.home) == env.routes_file
-    }))
+    for file in global_config_files(env) {
+        for p in gitcfg::get_file_all(&file, "include.path")? {
+            if paths::to_git_path(&p) == want
+                || paths::expand_tilde(&p, &env.home) == env.routes_file
+            {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Whether `user.useConfigOnly` resolves to true across the global config
+/// files (later files win, mirroring git's precedence).
+pub fn useconfigonly_is_enabled(env: &Env) -> Result<bool> {
+    let mut enabled = false;
+    for file in global_config_files(env) {
+        if let Some(value) = gitcfg::get_file_bool(&file, "user.useConfigOnly")? {
+            enabled = value;
+        }
+    }
+    Ok(enabled)
 }
 
 pub fn routes_path_str(env: &Env) -> Result<&str> {
@@ -47,7 +86,15 @@ impl Backup {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("gitconfig");
-        let bak = target.with_file_name(format!("{name}.bak-{}", timestamp_utc()?));
+        // The timestamp has 1-second resolution, so find a free name rather than
+        // letting fs::copy silently clobber a same-second backup.
+        let ts = timestamp_utc()?;
+        let mut bak = target.with_file_name(format!("{name}.bak-{ts}"));
+        let mut n = 1;
+        while bak.exists() {
+            bak = target.with_file_name(format!("{name}.bak-{ts}-{n}"));
+            n += 1;
+        }
         fs::copy(&target, &bak)
             .with_context(|| format!("cannot back up {} to {}", target.display(), bak.display()))?;
         self.path = Some(bak);
@@ -84,7 +131,7 @@ pub fn run(env: &Env, args: &InitArgs) -> Result<ExitCode> {
         Declined,
         SkippedNonInteractive,
     }
-    let already_on = gitcfg::global_get("user.useConfigOnly")?.as_deref() == Some("true");
+    let already_on = useconfigonly_is_enabled(env)?;
     let uco = if already_on {
         Uco::AlreadyEnabled
     } else {

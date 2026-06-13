@@ -886,3 +886,275 @@ fn completions_install_detects_shell_from_env() {
         "bash completion was not written via $SHELL detection"
     );
 }
+
+// ---------------------------------------------------------------------------
+// input validation / injection
+
+#[test]
+fn create_rejects_control_chars_in_signing_key() {
+    let t = TestEnv::new();
+    t.ok(&["init"]);
+    // A newline in the signing key would otherwise inject a gitconfig section
+    // (e.g. core.sshCommand) into the fragment git includes for routed repos.
+    t.cmd()
+        .args([
+            "create",
+            "work",
+            "--name",
+            "Jane",
+            "--email",
+            "jane@work.example",
+            "--signing-key",
+            "KEY\n[core]\n\tsshCommand = touch PWNED",
+        ])
+        .assert()
+        .failure()
+        .stderr(contains("control characters"));
+    assert!(
+        !t.fragment("work").exists(),
+        "no fragment must be written when validation fails"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// edit: signing-key removal, sign toggles, and atomic validation
+
+#[test]
+fn edit_removes_signing_key_and_toggles_sign_preserving_manual_keys() {
+    let t = TestEnv::new();
+    t.ok(&["init"]);
+    t.ok(&[
+        "create",
+        "work",
+        "--name",
+        "Jane Doe",
+        "--email",
+        "jane@work.example",
+        "--signing-key",
+        "ABCDEF12",
+        "--sign",
+    ]);
+    // A hand-added key must survive edits.
+    let frag = t.fragment("work");
+    t.git_ok(
+        &t.home,
+        &[
+            "config",
+            "--file",
+            frag.to_str().unwrap(),
+            "core.sshCommand",
+            "ssh -i ~/.ssh/work",
+        ],
+    );
+
+    t.ok(&["edit", "work", "--signing-key", ""]); // remove the key
+    t.ok(&["edit", "work", "--no-sign"]); // turn signing off
+
+    let json: serde_json::Value = serde_json::from_str(&t.ok(&["show", "work", "--json"])).unwrap();
+    assert_eq!(json["user"]["signing_key"], serde_json::Value::Null);
+    assert_eq!(json["user"]["sign"], false);
+
+    let content = t.read(&frag);
+    assert!(
+        !content.contains("signingkey"),
+        "signing key not removed:\n{content}"
+    );
+    assert!(
+        content.contains("sshCommand"),
+        "manual key lost:\n{content}"
+    );
+}
+
+#[test]
+fn edit_rejects_invalid_field_without_partial_write() {
+    let t = TestEnv::new();
+    t.ok(&["init"]);
+    t.ok(&[
+        "create",
+        "work",
+        "--name",
+        "Old Name",
+        "--email",
+        "old@work.example",
+    ]);
+
+    // Valid name + invalid email: the whole patch must be rejected as a no-op,
+    // not leave the name already written.
+    t.cmd()
+        .args([
+            "edit",
+            "work",
+            "--name",
+            "New Name",
+            "--email",
+            "not-an-email",
+        ])
+        .assert()
+        .failure()
+        .stderr(contains("email"));
+
+    let content = t.read(&t.fragment("work"));
+    assert!(
+        content.contains("Old Name") && !content.contains("New Name"),
+        "partial write occurred:\n{content}"
+    );
+    assert!(content.contains("old@work.example"));
+}
+
+// ---------------------------------------------------------------------------
+// include detection across global config files (XDG vs ~/.gitconfig)
+
+#[test]
+fn include_in_xdg_is_found_and_removed_after_home_gitconfig_appears() {
+    let t = TestEnv::new();
+    // Force the include into the XDG git config: no ~/.gitconfig, but an
+    // existing $XDG_CONFIG_HOME/git/config makes that the --global write target.
+    let xdg_git = t.mkdirs(".config/git").join("config");
+    fs::write(&xdg_git, "[init]\n\tdefaultBranch = main\n").unwrap();
+    t.ok(&["init", "--no-use-config-only"]);
+    assert!(!t.gitconfig().exists());
+    assert!(t.read(&xdg_git).contains("routes.gitconfig"));
+
+    // A ~/.gitconfig appears later (e.g. another tool). `git config --global`
+    // would now go blind to the XDG include; git-id scans the files directly.
+    fs::write(t.gitconfig(), "[user]\n\tname = Someone\n").unwrap();
+
+    t.cmd()
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(contains("includes the routes file"));
+
+    t.ok(&["uninstall", "--yes"]);
+    let after = t.read(&xdg_git);
+    assert!(
+        !after.contains("routes.gitconfig"),
+        "the XDG include must be removed:\n{after}"
+    );
+    assert!(
+        after.contains("defaultBranch"),
+        "unrelated XDG content must be preserved:\n{after}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// init edge cases
+
+#[test]
+fn init_useconfigonly_already_enabled_is_idempotent() {
+    let t = TestEnv::new();
+    t.ok(&["init", "--use-config-only"]);
+    assert!(t.backups_of(&t.gitconfig()).is_empty());
+
+    let out = t.ok(&["init"]);
+    assert!(out.contains("already enabled"), "{out}");
+    assert!(
+        t.backups_of(&t.gitconfig()).is_empty(),
+        "a no-op re-run must not take a backup"
+    );
+}
+
+#[test]
+fn init_with_nonexistent_git_config_global_creates_it_without_backup() {
+    let t = TestEnv::new();
+    let custom = t.home.join("fresh-global.gitconfig");
+    t.cmd()
+        .env("GIT_CONFIG_GLOBAL", &custom)
+        .args(["init", "--no-use-config-only"])
+        .assert()
+        .success();
+    assert!(custom.exists(), "the override file should be created");
+    assert!(t.read(&custom).contains("routes.gitconfig"));
+    assert!(
+        t.backups_of(&custom).is_empty(),
+        "a fresh (nonexistent) target must not be backed up"
+    );
+    assert!(!t.gitconfig().exists(), "~/.gitconfig must not be created");
+}
+
+// ---------------------------------------------------------------------------
+// doctor: path-form and duplicate diagnostics
+
+#[test]
+fn doctor_flags_noncanonical_route() {
+    let t = TestEnv::new();
+    t.setup_work();
+    // Hand-write a route whose gitdir is non-canonical (contains `..`) but still
+    // resolves to an existing directory: doctor must flag it via the canonical
+    // comparison (which now runs in git-path form).
+    let home = t.git_path(&t.home);
+    let frag = t.git_path(&t.fragment("work"));
+    let routes =
+        format!("# header\n[includeIf \"gitdir:{home}/dev/work/../work/\"]\n\tpath = \"{frag}\"\n");
+    fs::write(t.routes_file(), routes).unwrap();
+
+    t.cmd()
+        .arg("doctor")
+        .assert()
+        .stdout(contains("differs from the directory's canonical path"));
+}
+
+#[test]
+fn doctor_flags_duplicate_gitdir_across_preserved_and_managed() {
+    let t = TestEnv::new();
+    let dir = t.setup_work();
+    let gitdir = format!("{}/", t.git_path(&dir));
+    let frag = t.git_path(&t.fragment("work"));
+    // Append a hand-edited includeIf for the SAME gitdir with an extra key, so
+    // it is bucketed as `preserved`, not a managed entry. git applies both.
+    let mut routes = t.read(&t.routes_file());
+    routes.push_str(&format!(
+        "\n[includeIf \"gitdir:{gitdir}\"]\n\tpath = \"{frag}\"\n\tsshCommand = ssh -i x\n"
+    ));
+    fs::write(t.routes_file(), routes).unwrap();
+
+    t.cmd()
+        .arg("doctor")
+        .assert()
+        .failure()
+        .stdout(contains("routes exist for"));
+}
+
+// ---------------------------------------------------------------------------
+// use: linked worktree
+
+#[test]
+fn use_warns_when_routing_a_linked_worktree() {
+    let t = TestEnv::new();
+    t.ok(&["init"]);
+    t.ok(&[
+        "create",
+        "work",
+        "--name",
+        "Jane",
+        "--email",
+        "jane@work.example",
+    ]);
+
+    let main = t.init_repo("dev/main");
+    // dev/main is not routed, so give the setup commit an explicit identity:
+    // CI runners (unlike a dev macOS box) have no auto-guessable git ident.
+    t.git_ok(
+        &main,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "init",
+        ],
+    );
+    let wt = t.home.join("dev/wt");
+    t.git_ok(&main, &["worktree", "add", wt.to_str().unwrap()]);
+
+    // git matches routes against the main repo, so a route on the worktree's own
+    // path would never apply — `use` must say so instead of silently succeeding.
+    t.cmd()
+        .args(["use", "work", wt.to_str().unwrap()])
+        .assert()
+        .success()
+        .stderr(contains("linked worktree"));
+}

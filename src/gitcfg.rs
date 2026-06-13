@@ -105,28 +105,21 @@ pub fn unset_file(file: &Path, key: &str) -> Result<()> {
     }
 }
 
-/// `git config --global --get <key>` -> None when absent (or when no global
-/// config file exists at all).
-pub fn global_get(key: &str) -> Result<Option<String>> {
-    let out = run(Command::new("git").args(["config", "--global", "--get", key]))?;
-    match out.status.code() {
-        Some(0) => Ok(Some(stdout_trimmed(&out))),
-        Some(1) => Ok(None),
-        _ => bail!(
-            "`git config --global --get {key}` failed: {}",
-            stderr_trimmed(&out)
-        ),
-    }
-}
-
-/// All values of a multi-valued global key; empty when absent.
-pub fn global_get_all(key: &str) -> Result<Vec<String>> {
-    let out = run(Command::new("git").args(["config", "--global", "--get-all", key]))?;
+/// All values of a multi-valued key in a specific file; empty when the key is
+/// absent (exit 1). The file is expected to exist — callers filter to existing
+/// files so a missing-file read error is never silently swallowed.
+pub fn get_file_all(file: &Path, key: &str) -> Result<Vec<String>> {
+    let out = run(Command::new("git")
+        .arg("config")
+        .arg("--file")
+        .arg(file)
+        .args(["--get-all", key]))?;
     match out.status.code() {
         Some(0) => Ok(stdout_trimmed(&out).lines().map(str::to_string).collect()),
         Some(1) => Ok(Vec::new()),
         _ => bail!(
-            "`git config --global --get-all {key}` failed: {}",
+            "`git config --file {} --get-all {key}` failed: {}",
+            file.display(),
             stderr_trimmed(&out)
         ),
     }
@@ -144,27 +137,19 @@ pub fn global_set(key: &str, value: &str) -> Result<()> {
     check(&out, &format!("`git config --global {key}`"))
 }
 
-/// Unset a single-valued global key; a missing key (exit 5) is fine.
-pub fn global_unset(key: &str) -> Result<()> {
-    let out = run(Command::new("git").args(["config", "--global", "--unset", key]))?;
+/// Remove every value of `key` in a specific file matching `value_regex`; no
+/// match (exit 5) is fine.
+pub fn unset_all_matching_file(file: &Path, key: &str, value_regex: &str) -> Result<()> {
+    let out = run(Command::new("git")
+        .arg("config")
+        .arg("--file")
+        .arg(file)
+        .args(["--unset-all", key, value_regex]))?;
     match out.status.code() {
         Some(0) | Some(5) => Ok(()),
         _ => bail!(
-            "`git config --global --unset {key}` failed: {}",
-            stderr_trimmed(&out)
-        ),
-    }
-}
-
-/// Remove every global value of `key` matching `value_regex`; no match
-/// (exit 5) is fine.
-pub fn global_unset_all_matching(key: &str, value_regex: &str) -> Result<()> {
-    let out =
-        run(Command::new("git").args(["config", "--global", "--unset-all", key, value_regex]))?;
-    match out.status.code() {
-        Some(0) | Some(5) => Ok(()),
-        _ => bail!(
-            "`git config --global --unset-all {key}` failed: {}",
+            "`git config --file {} --unset-all {key}` failed: {}",
+            file.display(),
             stderr_trimmed(&out)
         ),
     }

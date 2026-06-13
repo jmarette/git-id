@@ -40,12 +40,16 @@ pub fn run(env: &Env, args: &DeleteArgs) -> Result<ExitCode> {
         }
     }
 
-    if fragment_exists {
-        store::remove(env, &args.name)?;
-    }
+    // Rewrite routes first (atomic_write makes this step crash-safe), then
+    // remove the fragment: a mid-operation failure leaves a present-but-unrouted
+    // fragment (harmless; doctor reports it as info) rather than a route
+    // pointing at a deleted fragment.
     let removed = model.remove_identity(&args.name);
     if !removed.is_empty() {
         routes::save(env, &model)?;
+    }
+    if fragment_exists {
+        store::remove(env, &args.name)?;
     }
     if removed.is_empty() {
         println!("Deleted identity `{}`.", args.name);
