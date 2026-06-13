@@ -198,6 +198,49 @@ Notable changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 Future work: routing by remote URL (`hasconfig:remote.*.url`), per-identity
 SSH key management, GPG/SSH signing helpers, `doctor --fix`.
 
+## Releasing
+
+Releases are automated by [cargo-dist](https://axodotdev.github.io/cargo-dist/):
+pushing a `v*` tag builds the binaries for every target, creates the GitHub
+Release, and pushes the regenerated Homebrew formula to the
+[tap](https://github.com/jmarette/homebrew-tap). To cut version `X.Y.Z`:
+
+1. Bump `version` in [`Cargo.toml`](Cargo.toml), then run `cargo build` so
+   `Cargo.lock` records the new version (CI and the release build with
+   `--locked`). The git tag and the package version **must** match, or the
+   release job fails fast.
+2. In [`CHANGELOG.md`](CHANGELOG.md), rename the in-progress section to
+   `## [X.Y.Z]` — no date: the heading becomes the GitHub Release title, and
+   GitHub already shows the publish date next to each release. Add its
+   compare link at the bottom of the file, and start a fresh in-progress
+   section for the next cycle.
+3. Verify, commit, tag and push:
+
+   ```console
+   $ cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt --check
+   $ git commit -am "Release X.Y.Z"
+   $ git tag vX.Y.Z
+   $ git push origin master vX.Y.Z
+   ```
+
+   Pushing the tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml);
+   watch it with `gh run watch`. Afterwards, users update with
+   `brew upgrade git-id`, the standalone installers, or `cargo install`.
+
+Good to know:
+
+- **Never move or delete a published tag.** The release assets and the
+  Homebrew formula point at `releases/download/vX.Y.Z/…`, so re-tagging breaks
+  every existing install — ship a new version instead. The Release *title* is
+  editable any time (`gh release edit vX.Y.Z --title "X.Y.Z"`) without
+  touching the tag or its assets.
+- The Homebrew publish step needs a `HOMEBREW_TAP_TOKEN` secret on this repo
+  (a token with write access to the tap); it is already configured.
+- Release targets, installers and the tap are configured in
+  [`dist-workspace.toml`](dist-workspace.toml). After changing that, re-run
+  `dist init` (or `dist generate`) to regenerate the release workflow, and
+  `dist plan` to preview what a release would build.
+
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
