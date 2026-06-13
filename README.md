@@ -222,8 +222,8 @@ Contributions are welcome.
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org)
 (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`). Pull requests are
-squash-merged, so only the PR title has to follow the convention — your own
-commits can stay messy.
+merged with a merge commit (not squashed), so every commit is preserved in
+`master` — keep each commit focused and give it a Conventional Commits message.
 
 Contributions are dual-licensed under MIT OR Apache-2.0; see
 [License](#license).
