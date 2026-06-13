@@ -198,48 +198,53 @@ Notable changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 Future work: routing by remote URL (`hasconfig:remote.*.url`), per-identity
 SSH key management, GPG/SSH signing helpers, `doctor --fix`.
 
+## Contributing
+
+Contributions are welcome.
+
+1. For anything beyond a small fix, open an issue first so we can agree on the
+   approach before you spend time on it. Small fixes can go straight to a pull
+   request.
+2. Fork, branch off `master`, and open your PR against `master`. CI must be
+   green — it runs rustfmt, clippy (warnings denied) and the full test suite
+   on every pull request.
+3. New features should come with tests and an entry under `## [Unreleased]` in
+   [`CHANGELOG.md`](CHANGELOG.md).
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org)
+(`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`). Pull requests are
+squash-merged, so only the PR title has to follow the convention — your own
+commits can stay messy.
+
+Contributions are dual-licensed under MIT OR Apache-2.0; see
+[License](#license).
+
 ## Releasing
 
 Releases are automated by [cargo-dist](https://axodotdev.github.io/cargo-dist/):
-pushing a `v*` tag builds the binaries for every target, creates the GitHub
-Release, and pushes the regenerated Homebrew formula to the
-[tap](https://github.com/jmarette/homebrew-tap). To cut version `X.Y.Z`:
+pushing a `v*` tag builds the binaries, publishes the GitHub Release, and
+updates the Homebrew formula in the [tap](https://github.com/jmarette/homebrew-tap).
+To cut version `X.Y.Z`:
 
-1. Bump `version` in [`Cargo.toml`](Cargo.toml), then run `cargo build` so
-   `Cargo.lock` records the new version (CI and the release build with
-   `--locked`). The git tag and the package version **must** match, or the
-   release job fails fast.
-2. In [`CHANGELOG.md`](CHANGELOG.md), rename the in-progress section to
-   `## [X.Y.Z]` — no date: the heading becomes the GitHub Release title, and
-   GitHub already shows the publish date next to each release. Add its
-   compare link at the bottom of the file, and start a fresh in-progress
-   section for the next cycle.
-3. Verify, commit, tag and push:
+1. Bump `version` in [`Cargo.toml`](Cargo.toml) and run `cargo build` so
+   `Cargo.lock` matches — the tag and the package version must be equal, or
+   the release fails.
+2. Rename the in-progress [`CHANGELOG.md`](CHANGELOG.md) section to
+   `## [X.Y.Z]` (no date — it becomes the Release title), add its compare
+   link, and open a fresh section for the next cycle.
+3. Commit, then tag and push:
 
    ```console
-   $ cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt --check
-   $ git commit -am "Release X.Y.Z"
    $ git tag vX.Y.Z
    $ git push origin master vX.Y.Z
    ```
 
-   Pushing the tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml);
-   watch it with `gh run watch`. Afterwards, users update with
-   `brew upgrade git-id`, the standalone installers, or `cargo install`.
-
-Good to know:
-
-- **Never move or delete a published tag.** The release assets and the
-  Homebrew formula point at `releases/download/vX.Y.Z/…`, so re-tagging breaks
-  every existing install — ship a new version instead. The Release *title* is
-  editable any time (`gh release edit vX.Y.Z --title "X.Y.Z"`) without
-  touching the tag or its assets.
-- The Homebrew publish step needs a `HOMEBREW_TAP_TOKEN` secret on this repo
-  (a token with write access to the tap); it is already configured.
-- Release targets, installers and the tap are configured in
-  [`dist-workspace.toml`](dist-workspace.toml). After changing that, re-run
-  `dist init` (or `dist generate`) to regenerate the release workflow, and
-  `dist plan` to preview what a release would build.
+**Never move or delete a published tag** — the release assets and the Homebrew
+formula point at it, so re-tagging breaks existing installs; ship a new
+version instead. (The Release title can be changed afterwards without touching
+the tag.) Release targets, installers and the tap live in
+[`dist-workspace.toml`](dist-workspace.toml); re-run `dist init` after changing
+it, and `dist plan` to preview a release.
 
 ## License
 
