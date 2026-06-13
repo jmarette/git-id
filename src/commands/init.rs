@@ -86,7 +86,15 @@ impl Backup {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("gitconfig");
-        let bak = target.with_file_name(format!("{name}.bak-{}", timestamp_utc()?));
+        // The timestamp has 1-second resolution, so find a free name rather than
+        // letting fs::copy silently clobber a same-second backup.
+        let ts = timestamp_utc()?;
+        let mut bak = target.with_file_name(format!("{name}.bak-{ts}"));
+        let mut n = 1;
+        while bak.exists() {
+            bak = target.with_file_name(format!("{name}.bak-{ts}-{n}"));
+            n += 1;
+        }
         fs::copy(&target, &bak)
             .with_context(|| format!("cannot back up {} to {}", target.display(), bak.display()))?;
         self.path = Some(bak);
