@@ -1132,7 +1132,21 @@ fn use_warns_when_routing_a_linked_worktree() {
     ]);
 
     let main = t.init_repo("dev/main");
-    t.git_ok(&main, &["commit", "--allow-empty", "-m", "init"]);
+    // dev/main is not routed, so give the setup commit an explicit identity:
+    // CI runners (unlike a dev macOS box) have no auto-guessable git ident.
+    t.git_ok(
+        &main,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "init",
+        ],
+    );
     let wt = t.home.join("dev/wt");
     t.git_ok(&main, &["worktree", "add", wt.to_str().unwrap()]);
 
