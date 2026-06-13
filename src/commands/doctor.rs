@@ -114,7 +114,11 @@ pub fn run(env: &Env) -> Result<ExitCode> {
         } else {
             let (canon, _) =
                 paths::canonicalize_anchored(Path::new(entry.gitdir.trim_end_matches('/')));
-            let canon_slash = paths::ensure_trailing_slash(canon.to_string_lossy().into_owned());
+            // Compare in git-path form (forward slashes, de-UNC'd) so the stored
+            // gitdir is not falsely flagged as non-canonical on Windows, where
+            // fs::canonicalize yields a `\\?\C:\...` path. Identity on Unix.
+            let canon_slash =
+                paths::ensure_trailing_slash(paths::to_git_path(&canon.to_string_lossy()));
             if canon_slash != entry.gitdir {
                 d.warn(&format!(
                     "route {pretty} differs from the directory's canonical path {canon_slash} — git matches canonical paths, re-run `git-id use` on it"
