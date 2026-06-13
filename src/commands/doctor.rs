@@ -149,7 +149,7 @@ pub fn run(env: &Env) -> Result<ExitCode> {
         }
     }
 
-    if gitcfg::global_get("user.useConfigOnly")?.as_deref() == Some("true") {
+    if init::useconfigonly_is_enabled(env)? {
         d.ok("user.useConfigOnly is enabled — commits require an explicit identity");
     } else {
         d.info(

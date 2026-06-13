@@ -18,7 +18,7 @@ const ROUTES_INCLUDE_REGEX: &str = r"git-id/routes\.gitconfig$";
 pub fn run(env: &Env, args: &UninstallArgs) -> Result<ExitCode> {
     let include = init::include_is_installed(env)?;
     let dir_exists = env.config_dir.exists();
-    let use_config_only = gitcfg::global_get("user.useConfigOnly")?.as_deref() == Some("true");
+    let use_config_only = init::useconfigonly_is_enabled(env)?;
 
     if !include && !dir_exists && !use_config_only {
         println!("git-id is not set up — nothing to remove.");
@@ -47,11 +47,16 @@ pub fn run(env: &Env, args: &UninstallArgs) -> Result<ExitCode> {
         }
     }
 
-    if include {
-        gitcfg::global_unset_all_matching("include.path", ROUTES_INCLUDE_REGEX)?;
-    }
-    if use_config_only {
-        gitcfg::global_unset("user.useConfigOnly")?;
+    // Clean every global config file git reads, not just the one `--global`
+    // resolves to: the include (or useConfigOnly) may live in the XDG file even
+    // when ~/.gitconfig now exists, and `--global` would never reach it.
+    for file in init::global_config_files(env) {
+        if include {
+            gitcfg::unset_all_matching_file(&file, "include.path", ROUTES_INCLUDE_REGEX)?;
+        }
+        if use_config_only {
+            gitcfg::unset_file(&file, "user.useConfigOnly")?;
+        }
     }
     if dir_exists {
         fs::remove_dir_all(&env.config_dir)
