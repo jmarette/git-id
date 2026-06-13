@@ -51,6 +51,8 @@ pub enum Cmd {
     Which(WhichArgs),
     /// Check the git-id setup for problems
     Doctor,
+    /// Remove everything git-id set up (run before uninstalling the binary)
+    Uninstall(UninstallArgs),
     /// Print shell completions, or install them with `completions install`
     #[command(args_conflicts_with_subcommands = true)]
     Completions(CompletionsArgs),
@@ -149,6 +151,13 @@ pub struct UseArgs {
 pub struct UnsetArgs {
     /// Directory whose route to remove (default: current directory)
     pub path: Option<PathBuf>,
+}
+
+#[derive(Args)]
+pub struct UninstallArgs {
+    /// Remove without asking for confirmation
+    #[arg(long, visible_alias = "yes")]
+    pub force: bool,
 }
 
 #[derive(Args)]

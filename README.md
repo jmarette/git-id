@@ -102,6 +102,7 @@ guessing one from your hostname.
 | `git id unset [dir]` | Remove the route of a directory. |
 | `git id which [dir]` | Which identity applies here? Shows the matched route and what git actually resolves, and flags local overrides. Alias: `current`. |
 | `git id doctor` | Sanity-check the whole setup (include line, fragments, stale routes, …). |
+| `git id uninstall` | Undo git-id's setup (include line, `useConfigOnly`, config dir) before removing the binary. |
 | `git id completions [shell]` | Print shell completions; `--install` writes them into place (bash, zsh, fish, nushell, elvish, powershell). |
 
 Every command has a detailed `--help`.
@@ -176,11 +177,18 @@ $ git-id completions nushell | save -f ~/.config/nushell/completions/git-id.nu
 
 ## Uninstall
 
+First let git-id undo everything it set up — the `include.path` line in your
+global git config, the `user.useConfigOnly` guard, and the config directory:
+
 ```console
-$ git config --global --unset-all include.path ~/.config/git-id/routes.gitconfig
-$ rm -rf ~/.config/git-id
-$ cargo uninstall git-id
+$ git id uninstall
 ```
+
+Then remove the binary, depending on how you installed it:
+
+- Homebrew: `brew uninstall git-id`
+- cargo: `cargo uninstall git-id`
+- standalone installer: delete `git-id` from `~/.cargo/bin` (`git-id.exe` on Windows)
 
 ## Development
 

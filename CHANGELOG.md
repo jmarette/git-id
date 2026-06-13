@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `git-id uninstall` removes everything git-id set up — the `include.path`
+  line in the global git config, the `user.useConfigOnly` guard, and the
+  config directory — on any platform, so no shell-specific cleanup is needed
+  before removing the binary. Pass `--yes` to skip the confirmation.
 - `git-id completions install [shell]` sets up shell completions
   automatically: it detects your shell from `$SHELL` (or takes one
   explicitly), writes the completion script to the right location, and prints

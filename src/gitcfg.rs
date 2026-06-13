@@ -144,6 +144,32 @@ pub fn global_set(key: &str, value: &str) -> Result<()> {
     check(&out, &format!("`git config --global {key}`"))
 }
 
+/// Unset a single-valued global key; a missing key (exit 5) is fine.
+pub fn global_unset(key: &str) -> Result<()> {
+    let out = run(Command::new("git").args(["config", "--global", "--unset", key]))?;
+    match out.status.code() {
+        Some(0) | Some(5) => Ok(()),
+        _ => bail!(
+            "`git config --global --unset {key}` failed: {}",
+            stderr_trimmed(&out)
+        ),
+    }
+}
+
+/// Remove every global value of `key` matching `value_regex`; no match
+/// (exit 5) is fine.
+pub fn global_unset_all_matching(key: &str, value_regex: &str) -> Result<()> {
+    let out =
+        run(Command::new("git").args(["config", "--global", "--unset-all", key, value_regex]))?;
+    match out.status.code() {
+        Some(0) | Some(5) => Ok(()),
+        _ => bail!(
+            "`git config --global --unset-all {key}` failed: {}",
+            stderr_trimmed(&out)
+        ),
+    }
+}
+
 /// Effective value of a key as git resolves it from inside `dir`
 /// (includes, conditional includes, repo-local config — everything).
 pub fn effective(dir: &Path, key: &str) -> Result<Option<String>> {

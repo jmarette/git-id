@@ -634,6 +634,62 @@ fn nested_routes_deepest_wins_in_git_and_in_which() {
 }
 
 // ---------------------------------------------------------------------------
+// uninstall
+
+#[test]
+fn uninstall_removes_all_git_id_state() {
+    let t = TestEnv::new();
+    t.ok(&["init", "--use-config-only"]);
+    t.ok(&[
+        "create",
+        "work",
+        "--name",
+        "Jane Doe",
+        "--email",
+        "jane@work.example",
+    ]);
+    let dir = t.mkdirs("dev/work");
+    t.ok(&["use", "work", dir.to_str().unwrap()]);
+    assert!(t.config_dir().exists());
+
+    let out = t.ok(&["uninstall", "--yes"]);
+
+    assert!(!t.config_dir().exists(), "config dir must be removed");
+    let includes = t.git(
+        &t.home,
+        &["config", "--global", "--get-all", "include.path"],
+    );
+    assert!(
+        String::from_utf8_lossy(&includes.stdout).trim().is_empty(),
+        "the include line must be removed"
+    );
+    let uco = t.git(
+        &t.home,
+        &["config", "--global", "--get", "user.useConfigOnly"],
+    );
+    assert!(!uco.status.success(), "user.useConfigOnly must be unset");
+    assert!(
+        out.contains("brew uninstall") && out.contains("cargo uninstall"),
+        "should explain how to remove the binary:\n{out}"
+    );
+}
+
+#[test]
+fn uninstall_refuses_without_confirmation_when_noninteractive() {
+    let t = TestEnv::new();
+    t.setup_work();
+    t.cmd()
+        .arg("uninstall")
+        .assert()
+        .failure()
+        .stderr(contains("--yes"));
+    assert!(
+        t.config_dir().exists(),
+        "nothing should be removed without confirmation"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // which / current
 
 #[test]

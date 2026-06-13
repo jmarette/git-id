@@ -6,6 +6,7 @@ pub mod edit;
 pub mod init;
 pub mod list;
 pub mod show;
+pub mod uninstall;
 pub mod unset;
 pub mod r#use;
 pub mod which;
@@ -29,6 +30,7 @@ pub fn dispatch(env: &Env, cmd: &Cmd) -> Result<ExitCode> {
         Cmd::Unset(args) => unset::run(env, args),
         Cmd::Which(args) => which::run(env, args),
         Cmd::Doctor => doctor::run(env),
+        Cmd::Uninstall(args) => uninstall::run(env, args),
         Cmd::Completions(args) => completions::run(env, args),
     }
 }
