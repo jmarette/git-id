@@ -166,8 +166,9 @@ $ git-id completions nushell | save -f ~/.config/nushell/completions/git-id.nu
   `.git` directory, which lives under the *main* repository. A worktree placed
   under a routed directory whose main repo lives elsewhere keeps the main
   repo's identity. `git id which` detects and explains this.
-- **Bare repository exactly at a routed root** is not matched (repositories
-  *below* the routed directory, bare or not, are fine).
+- **Bare repositories** route like any other: because routes are stored with a
+  trailing slash, a route matches a bare repo whose git directory *is* the
+  routed directory itself, as well as every repository below it.
 - **Symlinked paths** are stored resolved (e.g. `/tmp/...` becomes
   `/private/tmp/...` on macOS) because that is what Git matches against.
 - `git id --help` tries to open a `git-id` man page and fails; use
