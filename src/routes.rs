@@ -231,7 +231,7 @@ fn is_substantive(line: &str) -> bool {
 /// `[includeIf "gitdir:<pattern>"]` -> `<pattern>` (with subsection
 /// unescaping). Conditions other than plain case-sensitive `gitdir:` —
 /// e.g. `gitdir/i:`, `onbranch:`, `hasconfig:` — are treated as foreign.
-fn parse_gitdir_header(line: &str) -> Option<String> {
+pub(crate) fn parse_gitdir_header(line: &str) -> Option<String> {
     let t = line.trim();
     let inner = t.strip_prefix('[')?.strip_suffix(']')?.trim();
     let (section, rest) = inner.split_once('"')?;

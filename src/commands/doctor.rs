@@ -69,14 +69,26 @@ pub fn run(env: &Env) -> Result<ExitCode> {
         ));
     }
 
+    // Hand-added `[includeIf "gitdir:..."]` blocks live in `preserved`; count
+    // them alongside managed entries so a duplicate split across a managed
+    // route and a preserved block (git applies both) is still flagged.
+    let preserved_gitdirs: Vec<String> = model
+        .preserved
+        .iter()
+        .filter_map(|block| block.lines().next())
+        .filter_map(routes::parse_gitdir_header)
+        .collect();
     let mut counts: HashMap<&str, u32> = HashMap::new();
     for entry in &model.entries {
         *counts.entry(entry.gitdir.as_str()).or_insert(0) += 1;
     }
+    for gitdir in &preserved_gitdirs {
+        *counts.entry(gitdir.as_str()).or_insert(0) += 1;
+    }
     for (gitdir, n) in counts {
         if n > 1 {
             d.error(&format!(
-                "{n} routes exist for {gitdir} — run `git-id use` on it again to deduplicate"
+                "{n} routes exist for {gitdir} — git applies all of them (last wins); remove the duplicate `[includeIf]` block(s) from routes.gitconfig"
             ));
         }
     }
