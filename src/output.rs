@@ -11,6 +11,10 @@ pub struct UserJson {
     pub email: String,
     pub signing_key: Option<String>,
     pub sign: bool,
+    /// gpg.format, when set.
+    pub format: Option<String>,
+    /// core.sshCommand, when set.
+    pub ssh_command: Option<String>,
 }
 
 /// One element of `git-id list --json`; also the shape of `show --json`.

@@ -41,6 +41,8 @@ pub fn run(env: &Env, args: &ListArgs) -> Result<ExitCode> {
                         email: id.email,
                         signing_key: id.signing_key,
                         sign: id.sign,
+                        format: id.format,
+                        ssh_command: id.ssh_command,
                     },
                     routes: model
                         .gitdirs_for_identity(name)

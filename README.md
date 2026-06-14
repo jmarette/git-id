@@ -34,7 +34,8 @@ under `${XDG_CONFIG_HOME:-~/.config}/git-id/`:
        path = "/Users/you/.config/git-id/identities/work.gitconfig"
 
 ~/.config/git-id/identities/work.gitconfig   ← one fragment per identity
-└─ [user] name / email / signingkey, [commit] gpgsign
+└─ [user] name / email / signingkey, [gpg] format,
+   [commit] gpgsign, [core] sshCommand
 ```
 
 A route on a directory applies to it **and every repository below it**.
@@ -93,7 +94,7 @@ guessing one from your hostname.
 | Command | What it does |
 |---|---|
 | `git id init` | One-time setup (idempotent, backs up your gitconfig first). |
-| `git id create <name>` | Create an identity (`--name`, `--email`, `--signing-key`, `--sign`; prompts interactively if omitted). |
+| `git id create <name>` | Create an identity (`--name`, `--email`, `--signing-key`, `--sign`, `--format`, `--ssh-key`/`--ssh-command`; prompts for the basics if omitted). |
 | `git id list` | Identities and the directories routed to them (`--paths` for the dir → identity map). |
 | `git id show <name>` | Full detail of one identity, including the raw fragment. |
 | `git id edit <name>` | Update via flags, or open the fragment in `$EDITOR` when no flags are given. Hand-added keys survive. |
@@ -106,6 +107,26 @@ guessing one from your hostname.
 | `git id completions [shell]` | Print shell completions; `--install` writes them into place (bash, zsh, fish, nushell, elvish, powershell). |
 
 Every command has a detailed `--help`.
+
+### Signing and SSH keys
+
+An identity can carry its signing and transport settings, so they follow the
+directory like the name and email do:
+
+```console
+$ git id create work --name "Jane Doe" --email jane@work.example \
+    --signing-key ABCDEF12 --sign --format ssh \
+    --ssh-key ~/.ssh/id_work
+```
+
+- `--format <openpgp|ssh|x509>` sets `gpg.format` (SSH signing needs git ≥ 2.34).
+- `--ssh-key <path>` is shorthand: git-id writes
+  `core.sshCommand = ssh -i <path> -o IdentitiesOnly=yes`, so that exact key is
+  used and an agent key can't shadow it. Use `--ssh-command "<cmd>"` instead to
+  store a full command verbatim (custom port, proxy, …).
+
+On `edit`, `--no-format` and `--no-ssh` remove those settings; `--signing-key ""`
+removes the key. Anything you add to a fragment by hand is preserved.
 
 ### Scripting
 
@@ -204,8 +225,7 @@ the binary and a real `git` inside its own temporary `HOME`.
 
 Notable changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
-Future work: routing by remote URL (`hasconfig:remote.*.url`), per-identity
-SSH key management, GPG/SSH signing helpers, `doctor --fix`.
+Future work: routing by remote URL (`hasconfig:remote.*.url`), `doctor --fix`.
 
 ## Contributing
 

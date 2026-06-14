@@ -843,6 +843,37 @@ fn doctor_flags_missing_fragment_and_missing_include() {
 }
 
 #[test]
+fn doctor_flags_invalid_gpg_format() {
+    let t = TestEnv::new();
+    t.ok(&["init"]);
+    t.ok(&[
+        "create",
+        "work",
+        "--name",
+        "Jane Doe",
+        "--email",
+        "jane@work.example",
+    ]);
+    // A hand-edited fragment can hold a bogus gpg.format value (git only fails
+    // at signing time); doctor flags it as a warning, not a hard error.
+    t.git_ok(
+        &t.home,
+        &[
+            "config",
+            "--file",
+            t.fragment("work").to_str().unwrap(),
+            "gpg.format",
+            "pgp",
+        ],
+    );
+    t.cmd()
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(contains("openpgp, ssh or x509"));
+}
+
+#[test]
 fn completions_generate_for_bash_and_zsh() {
     let t = TestEnv::new();
     for shell in ["bash", "zsh", "fish", "nushell"] {
@@ -962,6 +993,151 @@ fn edit_removes_signing_key_and_toggles_sign_preserving_manual_keys() {
     assert!(
         content.contains("sshCommand"),
         "manual key lost:\n{content}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// gpg.format and per-identity SSH key (core.sshCommand)
+
+#[test]
+fn create_sets_gpg_format_and_ssh_key() {
+    let t = TestEnv::new();
+    t.ok(&["init"]);
+    t.ok(&[
+        "create",
+        "work",
+        "--name",
+        "Jane Doe",
+        "--email",
+        "jane@work.example",
+        "--format",
+        "ssh",
+        "--ssh-key",
+        "/home/jane/.ssh/id_work",
+    ]);
+
+    // `--ssh-key` is sugar for a deterministic, agent-proof command.
+    assert_eq!(
+        t.read(&t.fragment("work")),
+        "# git-id identity: work\n\
+         [user]\n\
+         \tname = Jane Doe\n\
+         \temail = jane@work.example\n\
+         [gpg]\n\
+         \tformat = ssh\n\
+         [core]\n\
+         \tsshCommand = ssh -i '/home/jane/.ssh/id_work' -o IdentitiesOnly=yes\n"
+    );
+
+    let json: serde_json::Value = serde_json::from_str(&t.ok(&["show", "work", "--json"])).unwrap();
+    assert_eq!(json["user"]["format"], "ssh");
+    assert_eq!(
+        json["user"]["ssh_command"],
+        "ssh -i '/home/jane/.ssh/id_work' -o IdentitiesOnly=yes"
+    );
+}
+
+#[test]
+fn create_stores_raw_ssh_command_verbatim() {
+    let t = TestEnv::new();
+    t.ok(&["init"]);
+    t.ok(&[
+        "create",
+        "work",
+        "--name",
+        "Jane Doe",
+        "--email",
+        "jane@work.example",
+        "--ssh-command",
+        "ssh -i ~/.ssh/id_work -p 2222",
+    ]);
+
+    let json: serde_json::Value = serde_json::from_str(&t.ok(&["show", "work", "--json"])).unwrap();
+    assert_eq!(json["user"]["ssh_command"], "ssh -i ~/.ssh/id_work -p 2222");
+    assert_eq!(json["user"]["format"], serde_json::Value::Null);
+}
+
+#[test]
+fn ssh_key_and_ssh_command_are_mutually_exclusive() {
+    let t = TestEnv::new();
+    t.ok(&["init"]);
+    t.cmd()
+        .args([
+            "create",
+            "work",
+            "--name",
+            "Jane",
+            "--email",
+            "jane@work.example",
+            "--ssh-key",
+            "/k",
+            "--ssh-command",
+            "ssh -i /k",
+        ])
+        .assert()
+        .failure();
+    assert!(!t.fragment("work").exists());
+}
+
+#[test]
+fn create_rejects_control_chars_in_ssh_command() {
+    let t = TestEnv::new();
+    t.ok(&["init"]);
+    // A newline would otherwise inject a gitconfig section into the fragment.
+    t.cmd()
+        .args([
+            "create",
+            "work",
+            "--name",
+            "Jane",
+            "--email",
+            "jane@work.example",
+            "--ssh-command",
+            "ssh\n[user]\n\temail = evil@x.co",
+        ])
+        .assert()
+        .failure()
+        .stderr(contains("control characters"));
+    assert!(!t.fragment("work").exists());
+}
+
+#[test]
+fn edit_sets_and_removes_format_and_ssh() {
+    let t = TestEnv::new();
+    t.ok(&["init"]);
+    t.ok(&[
+        "create",
+        "work",
+        "--name",
+        "Jane Doe",
+        "--email",
+        "jane@work.example",
+    ]);
+
+    t.ok(&[
+        "edit",
+        "work",
+        "--format",
+        "ssh",
+        "--ssh-key",
+        "/home/jane/.ssh/id_work",
+    ]);
+    let json: serde_json::Value = serde_json::from_str(&t.ok(&["show", "work", "--json"])).unwrap();
+    assert_eq!(json["user"]["format"], "ssh");
+    assert_eq!(
+        json["user"]["ssh_command"],
+        "ssh -i '/home/jane/.ssh/id_work' -o IdentitiesOnly=yes"
+    );
+
+    t.ok(&["edit", "work", "--no-format", "--no-ssh"]);
+    let json: serde_json::Value = serde_json::from_str(&t.ok(&["show", "work", "--json"])).unwrap();
+    assert_eq!(json["user"]["format"], serde_json::Value::Null);
+    assert_eq!(json["user"]["ssh_command"], serde_json::Value::Null);
+
+    let content = t.read(&t.fragment("work"));
+    assert!(
+        !content.contains("format") && !content.contains("sshCommand"),
+        "format/ssh not removed:\n{content}"
     );
 }
 
