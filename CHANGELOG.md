@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Identities can carry per-directory signing and SSH settings. `create`/`edit`
+  gain `--format <openpgp|ssh|x509>` (`gpg.format`, for SSH commit signing on
+  git ≥ 2.34), `--ssh-key <path>` — shorthand for
+  `core.sshCommand = ssh -i <path> -o IdentitiesOnly=yes`, so a per-identity key
+  is used and an agent key cannot shadow it — and `--ssh-command <cmd>` to store
+  a full `core.sshCommand` verbatim. `edit --no-format` / `--no-ssh` remove them.
+  Both new values are surfaced in `show`/`list --json` (`user.format`,
+  `user.ssh_command`) and are rejected if they carry control characters.
+
 ### Fixed
 
 - `doctor` no longer reports every routed directory as differing from its
