@@ -23,6 +23,16 @@ pub fn run(env: &Env, args: &EditArgs) -> Result<ExitCode> {
         } else {
             None
         },
+        format: if args.no_format {
+            Some(String::new())
+        } else {
+            args.format.map(|f| f.as_str().to_string())
+        },
+        ssh_command: if args.no_ssh {
+            Some(String::new())
+        } else {
+            store::resolve_ssh_command(args.ssh_key.as_deref(), args.ssh_command.as_deref())?
+        },
     };
 
     if !patch.is_empty() {

@@ -27,6 +27,8 @@ pub fn run(env: &Env, args: &ShowArgs) -> Result<ExitCode> {
                 email: id.email,
                 signing_key: id.signing_key,
                 sign: id.sign,
+                format: id.format,
+                ssh_command: id.ssh_command,
             },
             routes: dirs,
         })?;
@@ -51,6 +53,12 @@ pub fn run(env: &Env, args: &ShowArgs) -> Result<ExitCode> {
         );
     } else if id.sign {
         println!("signing:  commit.gpgsign=true");
+    }
+    if let Some(format) = &id.format {
+        println!("format:   {format} (gpg.format)");
+    }
+    if let Some(cmd) = &id.ssh_command {
+        println!("ssh:      {cmd}");
     }
     if dirs.is_empty() {
         println!("routes:   (none)");

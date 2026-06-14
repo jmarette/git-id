@@ -85,6 +85,17 @@ pub struct CreateArgs {
     /// Sign commits by default (sets commit.gpgsign=true)
     #[arg(long)]
     pub sign: bool,
+    /// Signing format (gpg.format): openpgp (default), ssh or x509
+    #[arg(long, value_enum, value_name = "FORMAT")]
+    pub format: Option<SigningFormat>,
+    /// SSH key file for this identity's git operations; sets
+    /// `core.sshCommand = ssh -i <PATH> -o IdentitiesOnly=yes`
+    #[arg(long, value_name = "PATH", conflicts_with = "ssh_command")]
+    pub ssh_key: Option<String>,
+    /// Full ssh command for this identity's git operations, stored verbatim in
+    /// core.sshCommand (escape hatch for custom ports, proxies, …)
+    #[arg(long, value_name = "COMMAND", conflicts_with = "ssh_key")]
+    pub ssh_command: Option<String>,
     /// Overwrite the identity if it already exists
     #[arg(long)]
     pub force: bool,
@@ -128,6 +139,22 @@ pub struct EditArgs {
     /// Do not sign commits by default (sets commit.gpgsign=false)
     #[arg(long)]
     pub no_sign: bool,
+    /// New signing format (gpg.format): openpgp, ssh or x509
+    #[arg(long, value_enum, value_name = "FORMAT", conflicts_with = "no_format")]
+    pub format: Option<SigningFormat>,
+    /// Remove the signing format (gpg.format), reverting to git's default
+    #[arg(long)]
+    pub no_format: bool,
+    /// SSH key file for git operations; sets
+    /// `core.sshCommand = ssh -i <PATH> -o IdentitiesOnly=yes`
+    #[arg(long, value_name = "PATH", conflicts_with_all = ["ssh_command", "no_ssh"])]
+    pub ssh_key: Option<String>,
+    /// Full ssh command for git operations, stored verbatim in core.sshCommand
+    #[arg(long, value_name = "COMMAND", conflicts_with_all = ["ssh_key", "no_ssh"])]
+    pub ssh_command: Option<String>,
+    /// Remove the SSH command (core.sshCommand)
+    #[arg(long)]
+    pub no_ssh: bool,
 }
 
 #[derive(Args)]
@@ -167,6 +194,26 @@ pub struct WhichArgs {
     /// Machine-readable JSON output
     #[arg(long)]
     pub json: bool,
+}
+
+/// Backend git uses to sign commits/tags, mapped to `gpg.format`. `openpgp`
+/// is git's default; `ssh` enables SSH signing (git >= 2.34).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum SigningFormat {
+    Openpgp,
+    Ssh,
+    X509,
+}
+
+impl SigningFormat {
+    /// The exact value written to `gpg.format`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SigningFormat::Openpgp => "openpgp",
+            SigningFormat::Ssh => "ssh",
+            SigningFormat::X509 => "x509",
+        }
+    }
 }
 
 /// Shells supported by `git-id completions`: the ones natively covered by

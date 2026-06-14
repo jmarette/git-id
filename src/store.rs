@@ -28,6 +28,11 @@ pub struct Identity {
     pub signing_key: Option<String>,
     /// commit.gpgsign
     pub sign: bool,
+    /// gpg.format (signing backend): `openpgp`, `ssh` or `x509`.
+    pub format: Option<String>,
+    /// core.sshCommand: the command git runs in place of `ssh` for this
+    /// identity's git operations (per-identity SSH key).
+    pub ssh_command: Option<String>,
 }
 
 /// Partial update applied by `git-id edit` with flags.
@@ -38,6 +43,10 @@ pub struct IdentityPatch {
     /// `Some("")` removes the signing key.
     pub signing_key: Option<String>,
     pub sign: Option<bool>,
+    /// `Some("")` removes gpg.format.
+    pub format: Option<String>,
+    /// `Some("")` removes core.sshCommand.
+    pub ssh_command: Option<String>,
 }
 
 impl IdentityPatch {
@@ -46,6 +55,8 @@ impl IdentityPatch {
             && self.email.is_none()
             && self.signing_key.is_none()
             && self.sign.is_none()
+            && self.format.is_none()
+            && self.ssh_command.is_none()
     }
 }
 
@@ -110,6 +121,64 @@ pub fn validate_signing_key(key: &str) -> Result<()> {
     Ok(())
 }
 
+/// `core.sshCommand` is free-form (a shell command line), but like a signing
+/// key it must not carry control characters: a newline would let the value
+/// break out of its line and inject an arbitrary gitconfig section.
+/// `quote_cfg_value` escapes such characters at render time too; this is the
+/// first line of defense. Callers pass only non-empty commands here.
+pub fn validate_ssh_command(cmd: &str) -> Result<()> {
+    ensure!(
+        !cmd.chars().any(char::is_control),
+        "ssh command cannot contain control characters"
+    );
+    Ok(())
+}
+
+/// `gpg.format` must be one of git's three signing backends.
+pub fn validate_format(format: &str) -> Result<()> {
+    ensure!(
+        matches!(format, "openpgp" | "ssh" | "x509"),
+        "signing format must be one of openpgp, ssh or x509 (got `{format}`)"
+    );
+    Ok(())
+}
+
+/// Build the `core.sshCommand` value for `--ssh-key <path>`: force git to use
+/// exactly this key (`IdentitiesOnly=yes`, so an agent key can't shadow it).
+/// The path is single-quoted for the shell git runs the command through (a
+/// POSIX `sh` everywhere, including Git for Windows), so spaces and shell
+/// metacharacters in the path stay literal.
+pub fn ssh_command_for_key(path: &str) -> String {
+    format!("ssh -i {} -o IdentitiesOnly=yes", shell_single_quote(path))
+}
+
+/// POSIX single-quote: wrap in `'…'`, encoding any embedded `'` as `'\''`.
+fn shell_single_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Resolve the `core.sshCommand` value from the two mutually exclusive
+/// `--ssh-key` / `--ssh-command` flags (clap already forbids passing both).
+/// `--ssh-key` is sugar for a deterministic command; `--ssh-command` is stored
+/// verbatim. Returns `None` when neither is given. Empty values are rejected —
+/// removal is `git-id edit --no-ssh`, handled by the caller.
+pub fn resolve_ssh_command(
+    ssh_key: Option<&str>,
+    ssh_command: Option<&str>,
+) -> Result<Option<String>> {
+    if let Some(path) = ssh_key {
+        ensure!(!path.is_empty(), "ssh key path cannot be empty");
+        validate_ssh_command(path)?;
+        Ok(Some(ssh_command_for_key(path)))
+    } else if let Some(cmd) = ssh_command {
+        ensure!(!cmd.is_empty(), "ssh command cannot be empty");
+        validate_ssh_command(cmd)?;
+        Ok(Some(cmd.to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
 pub fn fragment_path(env: &Env, name: &str) -> PathBuf {
     env.identities_dir.join(format!("{name}.{FRAGMENT_EXT}"))
 }
@@ -158,12 +227,16 @@ pub fn load(env: &Env, name: &str) -> Result<Identity> {
     })?;
     let signing_key = gitcfg::get_file(&path, "user.signingkey")?;
     let sign = gitcfg::get_file_bool(&path, "commit.gpgsign")?.unwrap_or(false);
+    let format = gitcfg::get_file(&path, "gpg.format")?;
+    let ssh_command = gitcfg::get_file(&path, "core.sshCommand")?;
     Ok(Identity {
         name: name.to_string(),
         user_name,
         email,
         signing_key,
         sign,
+        format,
+        ssh_command,
     })
 }
 
@@ -178,8 +251,17 @@ pub fn render_fragment(id: &Identity) -> String {
     if let Some(key) = &id.signing_key {
         out.push_str(&format!("\tsigningkey = {}\n", quote_cfg_value(key)));
     }
+    if let Some(format) = &id.format {
+        out.push_str(&format!("[gpg]\n\tformat = {}\n", quote_cfg_value(format)));
+    }
     if id.sign {
         out.push_str("[commit]\n\tgpgsign = true\n");
+    }
+    if let Some(cmd) = &id.ssh_command {
+        out.push_str(&format!(
+            "[core]\n\tsshCommand = {}\n",
+            quote_cfg_value(cmd)
+        ));
     }
     out
 }
@@ -220,6 +302,12 @@ pub fn write_new(env: &Env, id: &Identity, force: bool) -> Result<()> {
     if let Some(key) = &id.signing_key {
         validate_signing_key(key)?;
     }
+    if let Some(format) = &id.format {
+        validate_format(format)?;
+    }
+    if let Some(cmd) = &id.ssh_command {
+        validate_ssh_command(cmd)?;
+    }
     let path = fragment_path(env, &id.name);
     if path.exists() && !force {
         bail!(
@@ -252,6 +340,16 @@ pub fn apply_patch(env: &Env, name: &str, patch: &IdentityPatch) -> Result<()> {
             validate_signing_key(key)?;
         }
     }
+    if let Some(format) = &patch.format {
+        if !format.is_empty() {
+            validate_format(format)?;
+        }
+    }
+    if let Some(cmd) = &patch.ssh_command {
+        if !cmd.is_empty() {
+            validate_ssh_command(cmd)?;
+        }
+    }
     if let Some(user_name) = &patch.user_name {
         gitcfg::set_file(&path, "user.name", user_name)?;
     }
@@ -267,6 +365,20 @@ pub fn apply_patch(env: &Env, name: &str, patch: &IdentityPatch) -> Result<()> {
     }
     if let Some(sign) = patch.sign {
         gitcfg::set_file(&path, "commit.gpgsign", if sign { "true" } else { "false" })?;
+    }
+    if let Some(format) = &patch.format {
+        if format.is_empty() {
+            gitcfg::unset_file(&path, "gpg.format")?;
+        } else {
+            gitcfg::set_file(&path, "gpg.format", format)?;
+        }
+    }
+    if let Some(cmd) = &patch.ssh_command {
+        if cmd.is_empty() {
+            gitcfg::unset_file(&path, "core.sshCommand")?;
+        } else {
+            gitcfg::set_file(&path, "core.sshCommand", cmd)?;
+        }
     }
     Ok(())
 }
@@ -328,6 +440,8 @@ mod tests {
             email: "jane@work.example".into(),
             signing_key: None,
             sign: false,
+            format: None,
+            ssh_command: None,
         };
         assert_eq!(
             render_fragment(&id),
@@ -343,6 +457,59 @@ mod tests {
             render_fragment(&full),
             "# git-id identity: work\n[user]\n\tname = Jane Doe\n\temail = jane@work.example\n\tsigningkey = ABCDEF12\n[commit]\n\tgpgsign = true\n"
         );
+    }
+
+    #[test]
+    fn renders_gpg_format_and_ssh_command_sections() {
+        let id = Identity {
+            name: "work".into(),
+            user_name: "Jane Doe".into(),
+            email: "jane@work.example".into(),
+            signing_key: Some("ABCDEF12".into()),
+            sign: true,
+            format: Some("ssh".into()),
+            ssh_command: Some("ssh -i '/home/jane/.ssh/id_work' -o IdentitiesOnly=yes".into()),
+        };
+        assert_eq!(
+            render_fragment(&id),
+            "# git-id identity: work\n[user]\n\tname = Jane Doe\n\temail = jane@work.example\n\
+             \tsigningkey = ABCDEF12\n[gpg]\n\tformat = ssh\n[commit]\n\tgpgsign = true\n\
+             [core]\n\tsshCommand = ssh -i '/home/jane/.ssh/id_work' -o IdentitiesOnly=yes\n"
+        );
+    }
+
+    #[test]
+    fn format_validation() {
+        for ok in ["openpgp", "ssh", "x509"] {
+            assert!(validate_format(ok).is_ok(), "{ok} should be valid");
+        }
+        for bad in ["", "OpenPGP", "gpg", "rsa", "ssh "] {
+            assert!(validate_format(bad).is_err(), "{bad} should be invalid");
+        }
+    }
+
+    #[test]
+    fn ssh_command_for_key_shell_quotes_the_path() {
+        assert_eq!(
+            ssh_command_for_key("/home/jane/.ssh/id_work"),
+            "ssh -i '/home/jane/.ssh/id_work' -o IdentitiesOnly=yes"
+        );
+        // Spaces stay literal inside the single quotes.
+        assert_eq!(
+            ssh_command_for_key("/home/jane/My Keys/id"),
+            "ssh -i '/home/jane/My Keys/id' -o IdentitiesOnly=yes"
+        );
+        // An embedded apostrophe is closed, escaped, and reopened.
+        assert_eq!(
+            ssh_command_for_key("/home/o'brien/id"),
+            "ssh -i '/home/o'\\''brien/id' -o IdentitiesOnly=yes"
+        );
+    }
+
+    #[test]
+    fn ssh_command_rejects_control_chars() {
+        assert!(validate_ssh_command("ssh -i ~/.ssh/id -p 2222").is_ok());
+        assert!(validate_ssh_command("ssh\n[user]\n\temail = evil@x.co").is_err());
     }
 
     #[test]
@@ -376,6 +543,8 @@ mod tests {
             email: "j@b.co".into(),
             signing_key: Some("KEY\n[core]\n\tsshCommand = touch PWNED".into()),
             sign: false,
+            format: None,
+            ssh_command: None,
         };
         atomic_write(&path, &render_fragment(&id)).unwrap();
         assert_eq!(
@@ -397,6 +566,8 @@ mod tests {
             email: "q@b.co".into(),
             signing_key: None,
             sign: false,
+            format: None,
+            ssh_command: None,
         };
         atomic_write(&path, &render_fragment(&id)).unwrap();
         assert_eq!(

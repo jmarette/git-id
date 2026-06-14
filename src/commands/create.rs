@@ -21,7 +21,10 @@ pub fn run(env: &Env, args: &CreateArgs) -> Result<ExitCode> {
     let pure_interactive = args.user_name.is_none()
         && args.email.is_none()
         && args.signing_key.is_none()
-        && !args.sign;
+        && !args.sign
+        && args.format.is_none()
+        && args.ssh_key.is_none()
+        && args.ssh_command.is_none();
 
     let user_name = match &args.user_name {
         Some(v) => {
@@ -62,6 +65,9 @@ pub fn run(env: &Env, args: &CreateArgs) -> Result<ExitCode> {
     let sign = args.sign
         || (pure_interactive
             && prompt::confirm("Sign commits by default (commit.gpgsign=true)?", false)?);
+    let format = args.format.map(|f| f.as_str().to_string());
+    let ssh_command =
+        store::resolve_ssh_command(args.ssh_key.as_deref(), args.ssh_command.as_deref())?;
 
     let id = store::Identity {
         name: args.name.clone(),
@@ -69,6 +75,8 @@ pub fn run(env: &Env, args: &CreateArgs) -> Result<ExitCode> {
         email,
         signing_key,
         sign,
+        format,
+        ssh_command,
     };
     store::write_new(env, &id, args.force)?;
     println!(
