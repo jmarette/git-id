@@ -155,8 +155,21 @@ pub fn run(env: &Env) -> Result<ExitCode> {
                 "identity file `{name}.gitconfig` does not follow the naming rules (lowercase slug)"
             ));
         }
-        if let Err(err) = store::load(env, name) {
-            d.error(&format!("{err:#}"));
+        match store::load(env, name) {
+            Ok(id) => {
+                if let Some(format) = &id.format {
+                    // A hand-edited fragment can hold a bogus `gpg.format`; git
+                    // would only fail at signing time.
+                    if let Err(err) = store::validate_format(format) {
+                        d.warn(&format!("identity `{name}`: {err:#}"));
+                    } else if format == "ssh" && (major, minor) < (2, 34) {
+                        d.warn(&format!(
+                            "identity `{name}` uses gpg.format=ssh, which needs git >= 2.34 to sign (you have {major}.{minor}.{patch})"
+                        ));
+                    }
+                }
+            }
+            Err(err) => d.error(&format!("{err:#}")),
         }
         if model.gitdirs_for_identity(name).is_empty() {
             d.info(&format!(

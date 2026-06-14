@@ -843,6 +843,37 @@ fn doctor_flags_missing_fragment_and_missing_include() {
 }
 
 #[test]
+fn doctor_flags_invalid_gpg_format() {
+    let t = TestEnv::new();
+    t.ok(&["init"]);
+    t.ok(&[
+        "create",
+        "work",
+        "--name",
+        "Jane Doe",
+        "--email",
+        "jane@work.example",
+    ]);
+    // A hand-edited fragment can hold a bogus gpg.format value (git only fails
+    // at signing time); doctor flags it as a warning, not a hard error.
+    t.git_ok(
+        &t.home,
+        &[
+            "config",
+            "--file",
+            t.fragment("work").to_str().unwrap(),
+            "gpg.format",
+            "pgp",
+        ],
+    );
+    t.cmd()
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(contains("openpgp, ssh or x509"));
+}
+
+#[test]
 fn completions_generate_for_bash_and_zsh() {
     let t = TestEnv::new();
     for shell in ["bash", "zsh", "fish", "nushell"] {

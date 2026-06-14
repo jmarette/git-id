@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a full `core.sshCommand` verbatim. `edit --no-format` / `--no-ssh` remove them.
   Both new values are surfaced in `show`/`list --json` (`user.format`,
   `user.ssh_command`) and are rejected if they carry control characters.
+- `doctor` flags an identity whose `gpg.format` is not one of openpgp/ssh/x509,
+  and warns when `gpg.format = ssh` but the installed git is older than 2.34
+  (which cannot sign with SSH).
 
 ### Fixed
 
