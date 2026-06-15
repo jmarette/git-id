@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `completions install --activate` wires the completion into the shell's startup
+  file for shells that cannot autoload it (a system zsh with a read-only
+  `$fpath`, an older nushell, elvish, powershell). The edit is idempotent
+  (guarded by markers) and removed by `git id uninstall`. Without the flag,
+  git-id never edits your rc files — it only prints the one-time hint.
+- nushell completions now also cover the `git id` (spaced) form, so completion
+  fires whether the tool is invoked as `git-id` or `git id`.
+
+### Changed
+
+- `git id uninstall` now also removes the installed completion files and any
+  `--activate` startup-file edits.
+- The zsh fallback activation hint now includes initialising the completion
+  system (`autoload -Uz compinit && compinit`), and every fallback hint points
+  at `--activate`.
+
 ## [0.4.1]
 
 ### Changed

@@ -8,7 +8,7 @@ use crate::env::Env;
 use crate::paths::display_pretty;
 use crate::{gitcfg, prompt};
 
-use super::{init, man};
+use super::{completions, init, man};
 
 /// Matches the git-id include entry by the tail of its path, so it is found
 /// whatever the absolute prefix or path style (forward slashes, `~`, a custom
@@ -67,6 +67,9 @@ pub fn run(env: &Env, args: &UninstallArgs) -> Result<ExitCode> {
     if let Err(err) = man::remove_man_page(env) {
         eprintln!("warning: could not remove the man page: {err:#}");
     }
+    // Remove completion files and any `--activate` startup-file edits
+    // (best-effort — they also live outside the config dir).
+    completions::cleanup(env);
 
     println!("Removed git-id's configuration.");
     print_binary_hint();

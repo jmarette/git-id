@@ -1,4 +1,3 @@
-use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
@@ -14,15 +13,37 @@ use crate::store;
 
 /// Render the completion script for `shell` as a UTF-8 string.
 fn render(shell: CompletionShell) -> String {
+    // Nushell keys completions on the exact command name and has no `git`-style
+    // subcommand dispatch, so emit externs for both `git-id` and the `git id`
+    // form (git runs the binary as the `git id` subcommand) — that way
+    // completion fires whichever way it is invoked. Other shells either use the
+    // binary name directly (`git-id`) or, for zsh, dispatch `git id` to the
+    // `_git-id` function on their own.
+    if shell == CompletionShell::Nushell {
+        // clap_complete_nushell quotes subcommand extern names but not the
+        // top-level one, so `export extern git id [` (with a space) is invalid
+        // nushell — quote that single line.
+        let git_id = render_named(shell, "git id").replacen(
+            "export extern git id ",
+            "export extern \"git id\" ",
+            1,
+        );
+        return format!("{}\n{}", render_named(shell, "git-id"), git_id);
+    }
+    render_named(shell, "git-id")
+}
+
+/// Render the completion script for `shell` under the command name `bin`.
+fn render_named(shell: CompletionShell, bin: &str) -> String {
     let mut cmd = Cli::command();
     let mut buf = Vec::new();
     match shell {
-        CompletionShell::Bash => generate(Shell::Bash, &mut cmd, "git-id", &mut buf),
-        CompletionShell::Elvish => generate(Shell::Elvish, &mut cmd, "git-id", &mut buf),
-        CompletionShell::Fish => generate(Shell::Fish, &mut cmd, "git-id", &mut buf),
-        CompletionShell::Nushell => generate(Nushell, &mut cmd, "git-id", &mut buf),
-        CompletionShell::Powershell => generate(Shell::PowerShell, &mut cmd, "git-id", &mut buf),
-        CompletionShell::Zsh => generate(Shell::Zsh, &mut cmd, "git-id", &mut buf),
+        CompletionShell::Bash => generate(Shell::Bash, &mut cmd, bin, &mut buf),
+        CompletionShell::Elvish => generate(Shell::Elvish, &mut cmd, bin, &mut buf),
+        CompletionShell::Fish => generate(Shell::Fish, &mut cmd, bin, &mut buf),
+        CompletionShell::Nushell => generate(Nushell, &mut cmd, bin, &mut buf),
+        CompletionShell::Powershell => generate(Shell::PowerShell, &mut cmd, bin, &mut buf),
+        CompletionShell::Zsh => generate(Shell::Zsh, &mut cmd, bin, &mut buf),
     }
     String::from_utf8(buf).expect("clap_complete emits UTF-8")
 }
@@ -115,11 +136,13 @@ fn completion_target(
             path: config_base.join("fish/completions/git-id.fish"),
             activation: None,
         },
-        // zsh autoloads from any directory on $fpath; ~/.zfunc is a common one.
+        // zsh autoloads from any directory on $fpath; ~/.zfunc is a common one,
+        // but it must be on $fpath and the completion system must be initialised.
         CompletionShell::Zsh => InstallTarget {
             path: home.join(".zfunc/_git-id"),
             activation: Some(
-                "ensure ~/.zfunc is on your fpath: add `fpath+=(~/.zfunc)` before `compinit` in ~/.zshrc"
+                "add `fpath=(~/.zfunc $fpath); autoload -Uz compinit && compinit` to ~/.zshrc \
+                 (or re-run with `--activate`)"
                     .to_string(),
             ),
         },
@@ -127,17 +150,26 @@ fn completion_target(
         // generated file must be sourced from the shell's startup file.
         CompletionShell::Nushell => {
             let path = config_base.join("nushell/completions/git-id.nu");
-            let activation = Some(format!("add `source \"{}\"` to your config.nu", path.display()));
+            let activation = Some(format!(
+                "add `source \"{}\"` to your config.nu (or re-run with `--activate`)",
+                path.display()
+            ));
             InstallTarget { path, activation }
         }
         CompletionShell::Elvish => {
             let path = config_base.join("elvish/lib/git-id.elv");
-            let activation = Some(format!("add `eval (slurp < {})` to your rc.elv", path.display()));
+            let activation = Some(format!(
+                "add `eval (slurp < {})` to your rc.elv (or re-run with `--activate`)",
+                path.display()
+            ));
             InstallTarget { path, activation }
         }
         CompletionShell::Powershell => {
             let path = config_base.join("powershell/git-id.ps1");
-            let activation = Some(format!("dot-source it from your $PROFILE: `. {}`", path.display()));
+            let activation = Some(format!(
+                "dot-source it from your $PROFILE: `. {}` (or re-run with `--activate`)",
+                path.display()
+            ));
             InstallTarget { path, activation }
         }
     }
@@ -147,16 +179,7 @@ fn completion_target(
 /// stays usable in minimal build/packaging environments.
 pub fn print(shell: Option<CompletionShell>) -> Result<ExitCode> {
     let shell = resolve_shell(shell)?;
-    let mut cmd = Cli::command();
-    let out = &mut io::stdout();
-    match shell {
-        CompletionShell::Bash => generate(Shell::Bash, &mut cmd, "git-id", out),
-        CompletionShell::Elvish => generate(Shell::Elvish, &mut cmd, "git-id", out),
-        CompletionShell::Fish => generate(Shell::Fish, &mut cmd, "git-id", out),
-        CompletionShell::Nushell => generate(Nushell, &mut cmd, "git-id", out),
-        CompletionShell::Powershell => generate(Shell::PowerShell, &mut cmd, "git-id", out),
-        CompletionShell::Zsh => generate(Shell::Zsh, &mut cmd, "git-id", out),
-    }
+    print!("{}", render(shell));
     Ok(ExitCode::SUCCESS)
 }
 
@@ -284,33 +307,160 @@ fn resolve_install_target(env: &Env, shell: CompletionShell) -> InstallTarget {
     }
 }
 
+/// Markers delimiting the block git-id manages in a shell startup file, so the
+/// `--activate` edit is idempotent and cleanly removable.
+const ACTIVATE_BEGIN: &str = "# >>> git-id completions >>>";
+const ACTIVATE_END: &str = "# <<< git-id completions <<<";
+
+/// nushell's `config.nu` path (only needed for an old nushell with no autoload
+/// dir — modern nushell autoloads and needs no startup-file edit).
+fn nu_config_path() -> Option<PathBuf> {
+    capture("nu", &["-c", "$nu.config-path"]).map(|s| PathBuf::from(s.trim()))
+}
+
+/// The current user's PowerShell profile path.
+fn pwsh_profile_path() -> Option<PathBuf> {
+    let args = ["-NoProfile", "-Command", "$PROFILE.CurrentUserCurrentHost"];
+    capture("pwsh", &args)
+        .or_else(|| capture("powershell", &args))
+        .map(|s| PathBuf::from(s.trim()))
+}
+
+/// The startup file and the line(s) needed to activate `shell`'s completions
+/// when it cannot autoload them. `None` for autoloading shells, or when the
+/// startup-file path can't be resolved (a shell query failed).
+fn activation_edit(
+    env: &Env,
+    shell: CompletionShell,
+    comp_path: &Path,
+) -> Option<(PathBuf, String)> {
+    match shell {
+        // ~/.zfunc holds the file; put it on $fpath and run compinit so the
+        // completion system loads it (self-contained and order-correct).
+        CompletionShell::Zsh => Some((
+            env.home.join(".zshrc"),
+            "fpath=(~/.zfunc $fpath)\nautoload -Uz compinit && compinit".to_string(),
+        )),
+        CompletionShell::Elvish => Some((
+            env.config_base.join("elvish/rc.elv"),
+            format!("eval (slurp < {})", comp_path.display()),
+        )),
+        CompletionShell::Nushell => Some((
+            nu_config_path()?,
+            format!("source \"{}\"", comp_path.display()),
+        )),
+        CompletionShell::Powershell => Some((
+            pwsh_profile_path()?,
+            format!(". \"{}\"", comp_path.display()),
+        )),
+        // bash and fish autoload from their completion dirs.
+        CompletionShell::Bash | CompletionShell::Fish => None,
+    }
+}
+
+/// Idempotently add `snippet` (wrapped in git-id markers) to the startup file
+/// `rc`. Returns true if it added the block, false if one was already present.
+fn ensure_block(rc: &Path, snippet: &str) -> Result<bool> {
+    let existing = std::fs::read_to_string(rc).unwrap_or_default();
+    if existing.contains(ACTIVATE_BEGIN) {
+        return Ok(false);
+    }
+    let sep = if existing.is_empty() || existing.ends_with('\n') {
+        ""
+    } else {
+        "\n"
+    };
+    let new = format!("{existing}{sep}{ACTIVATE_BEGIN}\n{snippet}\n{ACTIVATE_END}\n");
+    store::atomic_write(rc, &new)?;
+    Ok(true)
+}
+
+/// Remove a git-id activation block from `rc` if present, leaving the rest of
+/// the file intact (line-based). Returns true if it changed the file.
+fn remove_block(rc: &Path) -> Result<bool> {
+    let Ok(existing) = std::fs::read_to_string(rc) else {
+        return Ok(false);
+    };
+    if !existing.contains(ACTIVATE_BEGIN) {
+        return Ok(false);
+    }
+    let mut kept: Vec<&str> = Vec::new();
+    let mut skipping = false;
+    for line in existing.lines() {
+        match line.trim() {
+            ACTIVATE_BEGIN => {
+                skipping = true;
+                // Drop the blank separator line we may have added before it.
+                while kept.last().is_some_and(|l| l.is_empty()) {
+                    kept.pop();
+                }
+            }
+            ACTIVATE_END => skipping = false,
+            _ if !skipping => kept.push(line),
+            _ => {}
+        }
+    }
+    let mut new = kept.join("\n");
+    if !new.is_empty() {
+        new.push('\n');
+    }
+    store::atomic_write(rc, &new)?;
+    Ok(true)
+}
+
 /// Write one shell's completion script, skipping the write when it is already
 /// up to date so re-runs (and `init`) stay quiet but upgrades still refresh.
-fn install_one(env: &Env, shell: CompletionShell) -> Result<()> {
+/// With `activate`, also wire shells that can't autoload into their startup file.
+fn install_one(env: &Env, shell: CompletionShell, activate: bool) -> Result<()> {
     let target = resolve_install_target(env, shell);
     let wrote = store::write_if_changed(&target.path, &render(shell))?;
     let pretty = display_pretty(&target.path.to_string_lossy(), &env.home);
-    if !wrote {
+    if wrote {
+        println!("Installed {} completions to {pretty}", shell_name(shell));
+    } else {
         println!(
             "{} completions already up to date ({pretty})",
             shell_name(shell)
         );
-        return Ok(());
     }
-    println!("Installed {} completions to {pretty}", shell_name(shell));
-    match &target.activation {
-        Some(step) => println!("To activate them, {step}, then restart your shell."),
-        None => println!("Restart your shell (or open a new session) to use them."),
+    let Some(hint) = &target.activation else {
+        // Autoloaded — nothing to wire up.
+        if wrote {
+            println!("Restart your shell (or open a new session) to use them.");
+        }
+        return Ok(());
+    };
+    match activate
+        .then(|| activation_edit(env, shell, &target.path))
+        .flatten()
+    {
+        Some((rc, snippet)) => {
+            let added = ensure_block(&rc, &snippet)?;
+            let rcp = display_pretty(&rc.to_string_lossy(), &env.home);
+            if added {
+                println!(
+                    "Activated {} completions in {rcp} — restart your shell.",
+                    shell_name(shell)
+                );
+            } else {
+                println!(
+                    "{} completions already activated in {rcp}.",
+                    shell_name(shell)
+                );
+            }
+        }
+        // Not requested, or the startup file couldn't be resolved: print the hint.
+        None => println!("To activate them, {hint}, then restart your shell."),
     }
     Ok(())
 }
 
 /// Install completions for each of `shells`, continuing past a per-shell error
 /// (reported on stderr). Returns how many succeeded.
-fn install_all(env: &Env, shells: &[CompletionShell]) -> usize {
+fn install_all(env: &Env, shells: &[CompletionShell], activate: bool) -> usize {
     let mut ok = 0;
     for &shell in shells {
-        match install_one(env, shell) {
+        match install_one(env, shell, activate) {
             Ok(()) => ok += 1,
             Err(err) => eprintln!(
                 "warning: could not install {} completions: {err:#}",
@@ -322,30 +472,67 @@ fn install_all(env: &Env, shells: &[CompletionShell]) -> usize {
 }
 
 /// Best-effort install for every shell detected on PATH; returns the count
-/// installed. Used by `init` (which must never fail on completions).
+/// installed. Used by `init` (which must never fail on completions, and never
+/// edits startup files).
 pub fn install_detected(env: &Env) -> usize {
-    install_all(env, &detect_installed_shells())
+    install_all(env, &detect_installed_shells(), false)
 }
 
 /// Install completions: for `shell` when given, only the current shell when
 /// `current`, otherwise for every shell found on PATH (falling back to the
-/// running shell when PATH yields nothing).
-pub fn install(env: &Env, shell: Option<CompletionShell>, current: bool) -> Result<ExitCode> {
+/// running shell when PATH yields nothing). `activate` also wires non-autoloading
+/// shells into their startup file.
+pub fn install(
+    env: &Env,
+    shell: Option<CompletionShell>,
+    current: bool,
+    activate: bool,
+) -> Result<ExitCode> {
     match shell {
-        Some(shell) => install_one(env, shell)?,
-        None if current => install_one(env, resolve_shell(None)?)?,
+        Some(shell) => install_one(env, shell, activate)?,
+        None if current => install_one(env, resolve_shell(None)?, activate)?,
         None => {
             let shells = detect_installed_shells();
             if shells.is_empty() {
                 // Nothing detected on PATH (unusual): still do something useful
                 // by targeting the running shell, erroring only if that fails.
-                install_one(env, resolve_shell(None)?)?;
+                install_one(env, resolve_shell(None)?, activate)?;
             } else {
-                install_all(env, &shells);
+                install_all(env, &shells, activate);
             }
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Undo what completion install wrote: delete the completion files for detected
+/// shells and remove any `--activate` blocks from shell startup files.
+/// Best-effort; used by `uninstall`.
+pub fn cleanup(env: &Env) {
+    for shell in detect_installed_shells() {
+        let target = resolve_install_target(env, shell);
+        if target.path.exists() && std::fs::remove_file(&target.path).is_ok() {
+            println!(
+                "Removed {} completions ({})",
+                shell_name(shell),
+                display_pretty(&target.path.to_string_lossy(), &env.home)
+            );
+        }
+    }
+    let mut rcs = vec![
+        env.home.join(".zshrc"),
+        env.config_base.join("elvish/rc.elv"),
+    ];
+    rcs.extend(nu_config_path());
+    rcs.extend(pwsh_profile_path());
+    for rc in rcs {
+        if remove_block(&rc).unwrap_or(false) {
+            println!(
+                "Removed git-id completion activation from {}",
+                display_pretty(&rc.to_string_lossy(), &env.home)
+            );
+        }
+    }
 }
 
 /// Whether a shell's completion file is present and current. Carries the path
@@ -394,7 +581,11 @@ pub fn shell_display_name(shell: CompletionShell) -> String {
 
 pub fn run(env: &Env, args: &CompletionsArgs) -> Result<ExitCode> {
     match &args.action {
-        Some(CompletionsAction::Install { shell, current }) => install(env, *shell, *current),
+        Some(CompletionsAction::Install {
+            shell,
+            current,
+            activate,
+        }) => install(env, *shell, *current, *activate),
         None => print(args.shell),
     }
 }
@@ -546,5 +737,46 @@ mod tests {
     fn render_emits_a_script_naming_the_binary() {
         assert!(render(CompletionShell::Bash).contains("git-id"));
         assert!(render(CompletionShell::Nushell).contains("git-id"));
+    }
+
+    #[test]
+    fn nushell_render_includes_quoted_git_id_externs() {
+        let nu = render(CompletionShell::Nushell);
+        // The `git id` form is emitted with a quoted top-level extern (the
+        // unquoted `export extern git id [` would be invalid nushell).
+        assert!(
+            nu.contains("export extern \"git id\""),
+            "missing quoted `git id` extern"
+        );
+        assert!(
+            !nu.contains("export extern git id ["),
+            "top-level `git id` extern must be quoted"
+        );
+    }
+
+    #[test]
+    fn ensure_block_is_idempotent_and_removable() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let rc = tmp.path().join(".zshrc");
+        std::fs::write(&rc, "# user config\nalias x=y\n").unwrap();
+
+        // First call adds the block; the marked snippet is present.
+        assert!(ensure_block(&rc, "SNIPPET LINE").unwrap());
+        let after = std::fs::read_to_string(&rc).unwrap();
+        assert!(after.contains(ACTIVATE_BEGIN) && after.contains("SNIPPET LINE"));
+        assert!(after.starts_with("# user config\nalias x=y\n"));
+
+        // Second call is a no-op (idempotent).
+        assert!(!ensure_block(&rc, "SNIPPET LINE").unwrap());
+        assert_eq!(std::fs::read_to_string(&rc).unwrap(), after);
+
+        // Removal restores the original content, leaving the user's lines intact.
+        assert!(remove_block(&rc).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&rc).unwrap(),
+            "# user config\nalias x=y\n"
+        );
+        // Removing again is a no-op.
+        assert!(!remove_block(&rc).unwrap());
     }
 }

@@ -156,18 +156,25 @@ scripts and hooks.
 usually there is nothing to do. To (re)install them yourself:
 
 ```console
-$ git-id completions install          # every shell found on PATH
-$ git-id completions install zsh      # …or just one, named explicitly
+$ git-id completions install            # every shell found on PATH
+$ git-id completions install zsh        # …or just one, named explicitly
 $ git-id completions install --current  # …or just the shell you're in
+$ git-id completions install --activate # …and wire it into your startup file
 ```
 
 It writes each completion script where the shell autoloads it (skipping any
 already up to date), so usually you just restart your shell. When a shell has no
 writable autoload location — a system zsh whose `$fpath` is read-only, an older
 nushell, or elvish/powershell — it falls back to a private location and prints
-the one line to add to your startup file. Supported shells: bash, zsh, fish,
-nushell, elvish, powershell. `git id doctor` reports, per shell,
-whether its completion file is installed.
+the one line to add to your startup file. Pass `--activate` to have git-id add
+that line for you (idempotent, and removed by `git id uninstall`); without it,
+git-id never edits your rc files. Supported shells: bash, zsh, fish, nushell,
+elvish, powershell. `git id doctor` reports, per shell, whether its completion
+file is installed.
+
+> **Note (nushell):** nushell completes the exact command name, so use
+> `git-id <Tab>`. git-id also ships `git id <Tab>` (the spaced form) externs for
+> nushell; in zsh, `git id <Tab>` works through git's own completion dispatch.
 
 **Manual.** `git-id completions <shell>` prints the script to stdout, so you
 can place it yourself:

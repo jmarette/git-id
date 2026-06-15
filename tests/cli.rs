@@ -1027,6 +1027,67 @@ fn completions_install_is_idempotent() {
 }
 
 #[test]
+fn completions_install_activate_edits_zshrc_idempotently() {
+    // zsh resolves to the ~/.zfunc fallback (fake zsh fails the $fpath probe),
+    // so --activate writes the fpath+compinit block into ~/.zshrc.
+    let t = TestEnv::new();
+    let bin = t.fake_bin(&["zsh"]);
+    t.cmd()
+        .env("PATH", &bin)
+        .args(["completions", "install", "zsh", "--activate"])
+        .assert()
+        .success();
+    let zshrc = t.home.join(".zshrc");
+    let body = t.read(&zshrc);
+    assert!(
+        body.contains("git-id completions"),
+        "marker missing:\n{body}"
+    );
+    assert!(body.contains("compinit"), "compinit missing:\n{body}");
+
+    // A second --activate must not duplicate the block.
+    t.cmd()
+        .env("PATH", &bin)
+        .args(["completions", "install", "zsh", "--activate"])
+        .assert()
+        .success();
+    assert_eq!(
+        t.read(&zshrc),
+        body,
+        "second --activate duplicated the block"
+    );
+}
+
+#[test]
+fn uninstall_removes_completion_files_and_activation() {
+    let t = TestEnv::new();
+    let path = t.path_with_fake_bin(&["zsh"]);
+    t.cmd().env("PATH", &path).args(["init"]).assert().success();
+    t.cmd()
+        .env("PATH", &path)
+        .args(["completions", "install", "zsh", "--activate"])
+        .assert()
+        .success();
+    let zshrc = t.home.join(".zshrc");
+    assert!(t.read(&zshrc).contains("git-id completions"));
+    assert!(t.home.join(".zfunc/_git-id").exists());
+
+    t.cmd()
+        .env("PATH", &path)
+        .args(["uninstall", "--yes"])
+        .assert()
+        .success();
+    assert!(
+        !t.read(&zshrc).contains("git-id completions"),
+        "uninstall should remove the rc activation block"
+    );
+    assert!(
+        !t.home.join(".zfunc/_git-id").exists(),
+        "uninstall should remove the completion file"
+    );
+}
+
+#[test]
 fn init_installs_completions_for_detected_shells() {
     // init must keep git reachable, so prepend the fake shells to the real PATH.
     let t = TestEnv::new();

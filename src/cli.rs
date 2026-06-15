@@ -252,5 +252,11 @@ pub enum CompletionsAction {
         /// NU_VERSION/FISH_VERSION), instead of every shell on PATH
         #[arg(long, conflicts_with = "shell")]
         current: bool,
+        /// Also wire the completion into the shell's startup file for shells
+        /// that cannot autoload it (zsh without a writable fpath, nushell,
+        /// elvish, powershell). Edits the rc file idempotently; `uninstall`
+        /// removes it
+        #[arg(long)]
+        activate: bool,
     },
 }
