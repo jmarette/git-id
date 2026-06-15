@@ -117,14 +117,6 @@ fn completion_target(
     }
 }
 
-/// `$XDG_DATA_HOME` when absolute, else `~/.local/share`.
-fn data_base(env: &Env) -> PathBuf {
-    std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .unwrap_or_else(|| env.home.join(".local/share"))
-}
-
 /// Print the completion script to stdout. Needs no filesystem or HOME, so it
 /// stays usable in minimal build/packaging environments.
 pub fn print(shell: Option<CompletionShell>) -> Result<ExitCode> {
@@ -145,7 +137,7 @@ pub fn print(shell: Option<CompletionShell>) -> Result<ExitCode> {
 /// Write the completion script to the right place for the shell.
 pub fn install(env: &Env, shell: Option<CompletionShell>) -> Result<ExitCode> {
     let shell = resolve_shell(shell)?;
-    let target = completion_target(shell, &env.home, &env.config_base, &data_base(env));
+    let target = completion_target(shell, &env.home, &env.config_base, &env.data_base());
     store::atomic_write(&target.path, &render(shell))?;
 
     let pretty = display_pretty(&target.path.to_string_lossy(), &env.home);

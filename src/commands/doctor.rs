@@ -8,7 +8,7 @@ use crate::env::Env;
 use crate::paths::{self, display_pretty};
 use crate::{gitcfg, routes, store};
 
-use super::init;
+use super::{init, man};
 
 #[derive(Default)]
 struct Doctor {
@@ -184,6 +184,21 @@ pub fn run(env: &Env) -> Result<ExitCode> {
         d.info(
             "user.useConfigOnly is not enabled — git may guess an identity where no route matches (enable with `git-id init --use-config-only`)",
         );
+    }
+
+    // On Windows there is no man system; `installed_man_path` returns None and
+    // we say nothing. Elsewhere, report whether the page `init` installs is in
+    // place (discoverability by `man` still depends on the manpath).
+    match man::installed_man_path(env) {
+        Some(path) if path.exists() => d.ok(&format!(
+            "man page installed: {}",
+            display_pretty(&path.to_string_lossy(), &env.home)
+        )),
+        Some(path) => d.info(&format!(
+            "no man page at {} — run `git-id init` to install it (or `git-id man` to print it)",
+            display_pretty(&path.to_string_lossy(), &env.home)
+        )),
+        None => {}
     }
 
     println!();

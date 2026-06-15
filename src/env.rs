@@ -94,6 +94,17 @@ impl Env {
             (gitconfig, false)
         }
     }
+
+    /// Base data directory: `$XDG_DATA_HOME` (when absolute) or
+    /// `~/.local/share`. Read from the process, like git's XDG handling, so
+    /// callers that write user data (shell completions, the man page) agree on
+    /// where it goes.
+    pub fn data_base(&self) -> PathBuf {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .unwrap_or_else(|| self.home.join(".local/share"))
+    }
 }
 
 /// Resolve the home directory on Unix: `HOME`, which must be set and non-empty.

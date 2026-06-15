@@ -8,7 +8,7 @@ use crate::env::Env;
 use crate::paths::display_pretty;
 use crate::{gitcfg, prompt};
 
-use super::init;
+use super::{init, man};
 
 /// Matches the git-id include entry by the tail of its path, so it is found
 /// whatever the absolute prefix or path style (forward slashes, `~`, a custom
@@ -61,6 +61,11 @@ pub fn run(env: &Env, args: &UninstallArgs) -> Result<ExitCode> {
     if dir_exists {
         fs::remove_dir_all(&env.config_dir)
             .with_context(|| format!("cannot remove {}", env.config_dir.display()))?;
+    }
+    // Remove the man page `init` installed (best-effort — it lives outside the
+    // config dir, next to the binary or in the XDG data dir).
+    if let Err(err) = man::remove_man_page(env) {
+        eprintln!("warning: could not remove the man page: {err:#}");
     }
 
     println!("Removed git-id's configuration.");

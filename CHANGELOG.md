@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `doctor` flags an identity whose `gpg.format` is not one of openpgp/ssh/x509,
   and warns when `gpg.format = ssh` but the installed git is older than 2.34
   (which cannot sign with SSH).
+- A man page. `git-id man` prints it (rendered from the CLI definition, like the
+  shell completions), and `git-id init` installs it beside the binary — in
+  `<prefix>/share/man/man1` for a cargo/installer/Homebrew layout, or
+  `~/.local/share/man` as a fallback — so `man git-id` and `git id --help`
+  (which git rewrites to `man git-id`) work with no extra step. `git-id
+  uninstall` removes it; `doctor` reports whether it is installed. No-op on
+  Windows, which has no man pages.
 
 ### Fixed
 
