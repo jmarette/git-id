@@ -161,11 +161,12 @@ $ git-id completions install zsh      # …or just one, named explicitly
 $ git-id completions install --current  # …or just the shell you're in
 ```
 
-It writes each completion script to the right place (skipping any already up to
-date) and, for shells without a completion autoload directory (zsh, nushell,
-elvish, powershell), prints the one line to add to your startup file. bash and
-fish autoload immediately — just restart your shell. Supported shells: bash,
-zsh, fish, nushell, elvish, powershell. `git id doctor` reports, per shell,
+It writes each completion script where the shell autoloads it (skipping any
+already up to date), so usually you just restart your shell. When a shell has no
+writable autoload location — a system zsh whose `$fpath` is read-only, an older
+nushell, or elvish/powershell — it falls back to a private location and prints
+the one line to add to your startup file. Supported shells: bash, zsh, fish,
+nushell, elvish, powershell. `git id doctor` reports, per shell,
 whether its completion file is installed.
 
 **Manual.** `git-id completions <shell>` prints the script to stdout, so you
