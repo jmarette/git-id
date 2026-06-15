@@ -105,6 +105,7 @@ guessing one from your hostname.
 | `git id doctor` | Sanity-check the whole setup (include line, fragments, stale routes, …). |
 | `git id uninstall` | Undo git-id's setup (include line, `useConfigOnly`, config dir) before removing the binary. |
 | `git id completions [shell]` | Print shell completions; `--install` writes them into place (bash, zsh, fish, nushell, elvish, powershell). |
+| `git id man` | Print the man page (roff). `git id init` already installs it, so `man git-id` and `git id --help` just work. |
 
 Every command has a detailed `--help`.
 
@@ -192,8 +193,9 @@ $ git-id completions nushell | save -f ~/.config/nushell/completions/git-id.nu
   routed directory itself, as well as every repository below it.
 - **Symlinked paths** are stored resolved (e.g. `/tmp/...` becomes
   `/private/tmp/...` on macOS) because that is what Git matches against.
-- `git id --help` tries to open a `git-id` man page and fails; use
-  `git-id --help` or `git id <command> --help` instead.
+- `git id --help` opens the `git-id` man page; `git id init` installs it (and
+  `git-id man` prints it). Windows has no man pages — use `git-id --help` or
+  `git id <command> --help` there.
 - Completions cover `git-id …` invocations; completing through `git id …`
   would need a git-specific completion script (future work).
 
