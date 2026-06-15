@@ -158,6 +158,38 @@ impl TestEnv {
         String::from_utf8_lossy(&out.stdout).trim().to_string()
     }
 
+    /// Create a `fake-bin` dir under HOME holding empty, executable files named
+    /// after `bins`, and return it. Used as a PATH entry to fake which shells
+    /// are "installed" without depending on the host.
+    pub fn fake_bin(&self, bins: &[&str]) -> PathBuf {
+        let dir = self.home.join("fake-bin");
+        fs::create_dir_all(&dir).unwrap();
+        for name in bins {
+            let p = dir.join(name);
+            fs::write(&p, "").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            // On Windows detection probes `<name>.exe` first; create it too.
+            #[cfg(windows)]
+            fs::write(dir.join(format!("{name}.exe")), "").unwrap();
+        }
+        dir
+    }
+
+    /// `fake_bin(bins)` prepended to the inherited PATH, so detection finds the
+    /// faked shells while real tools (notably `git`) stay reachable. Returns a
+    /// value suitable for `.env("PATH", _)`.
+    pub fn path_with_fake_bin(&self, bins: &[&str]) -> std::ffi::OsString {
+        let mut paths = vec![self.fake_bin(bins)];
+        paths.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
+        std::env::join_paths(paths).unwrap()
+    }
+
     /// Create a directory (and parents) under HOME; returns its path.
     pub fn mkdirs(&self, rel: &str) -> PathBuf {
         let dir = self.home.join(rel);

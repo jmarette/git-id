@@ -104,7 +104,7 @@ guessing one from your hostname.
 | `git id which [dir]` | Which identity applies here? Shows the matched route and what git actually resolves, and flags local overrides. Alias: `current`. |
 | `git id doctor` | Sanity-check the whole setup (include line, fragments, stale routes, …). |
 | `git id uninstall` | Undo git-id's setup (include line, `useConfigOnly`, config dir) before removing the binary. |
-| `git id completions [shell]` | Print shell completions; `--install` writes them into place (bash, zsh, fish, nushell, elvish, powershell). |
+| `git id completions [shell]` | Print shell completions; `completions install` writes them into place for every shell on PATH (or just `[shell]`). Supports bash, zsh, fish, nushell, elvish, powershell. |
 | `git id man` | Print the man page (roff). `git id init` already installs it, so `man git-id` and `git id --help` just work. |
 
 Every command has a detailed `--help`.
@@ -152,18 +152,21 @@ scripts and hooks.
 
 ### Shell completions
 
-**Automatic (recommended).** Let git-id install them for your shell:
+`git id init` already sets these up for every shell it finds on your PATH, so
+usually there is nothing to do. To (re)install them yourself:
 
 ```console
-$ git-id completions install          # detects your shell from $SHELL
-$ git-id completions install zsh      # …or name the shell explicitly
+$ git-id completions install          # every shell found on PATH
+$ git-id completions install zsh      # …or just one, named explicitly
+$ git-id completions install --current  # …or just the shell you're in
 ```
 
-It writes the completion script to the right place and, for shells without a
-completion autoload directory (zsh, nushell, elvish, powershell), prints the
-one line to add to your startup file. bash and fish autoload immediately —
-just restart your shell. Supported shells: bash, zsh, fish, nushell, elvish,
-powershell.
+It writes each completion script to the right place (skipping any already up to
+date) and, for shells without a completion autoload directory (zsh, nushell,
+elvish, powershell), prints the one line to add to your startup file. bash and
+fish autoload immediately — just restart your shell. Supported shells: bash,
+zsh, fish, nushell, elvish, powershell. `git id doctor` reports, per shell,
+whether its completion file is installed.
 
 **Manual.** `git-id completions <shell>` prints the script to stdout, so you
 can place it yourself:

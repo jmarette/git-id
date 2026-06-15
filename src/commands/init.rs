@@ -10,7 +10,7 @@ use crate::env::Env;
 use crate::paths::display_pretty;
 use crate::{gitcfg, paths, prompt, routes};
 
-use super::man;
+use super::{completions, man};
 
 /// The global-level config files git actually reads and that git-id may have
 /// written to, in increasing precedence order, existing files only. Mirrors
@@ -188,6 +188,10 @@ pub fn run(env: &Env, args: &InitArgs) -> Result<ExitCode> {
         Ok(None) => {}
         Err(err) => eprintln!("warning: could not install the man page: {err:#}"),
     }
+    // Install shell completions for every shell found on PATH. Best-effort and
+    // idempotent: each shell prints its own line (or stays quiet when already
+    // up to date), and a per-shell failure never fails setup.
+    completions::install_detected(env);
     match uco {
         Uco::Enabled => {
             println!(

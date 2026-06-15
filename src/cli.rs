@@ -245,8 +245,12 @@ pub enum CompletionsAction {
     /// Write the completion script into the right location for the shell,
     /// printing any one-time activation step
     Install {
-        /// Shell to target; auto-detected from $SHELL when omitted
+        /// Shell to target; installs for every shell found on PATH when omitted
         #[arg(value_enum)]
         shell: Option<CompletionShell>,
+        /// Install only for the current shell (detected from $SHELL, or
+        /// NU_VERSION/FISH_VERSION), instead of every shell on PATH
+        #[arg(long, conflicts_with = "shell")]
+        current: bool,
     },
 }

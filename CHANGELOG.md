@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `completions install` with no shell argument now installs completions for
+  **every shell found on PATH** instead of only the detected shell; pass a shell
+  name to target just one, or `--current` to target only the shell you are in.
+  It skips any shell whose completion file is already up
+  to date. `git id init` now installs completions for all detected shells
+  automatically, and `git id doctor` reports, per detected shell, whether its
+  completion file is present and current.
+
+### Fixed
+
+- `completions` shell auto-detection (the print-to-stdout path) now recognises
+  the running shell via `NU_VERSION`/`FISH_VERSION` before falling back to
+  `$SHELL` (the login shell, which is inherited unchanged), so printing
+  completions from Nushell or fish no longer emits the wrong shell's script.
+
 ## [0.3.1]
 
 ### Changed

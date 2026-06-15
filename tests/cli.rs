@@ -902,19 +902,147 @@ fn completions_install_reports_manual_step_for_nushell() {
 }
 
 #[test]
-fn completions_install_detects_shell_from_env() {
+fn completions_print_detects_shell_from_env() {
+    // The print-to-stdout path still resolves a single shell; with no
+    // version vars in the env it falls back to $SHELL.
     let t = TestEnv::new();
-    t.cmd()
+    let assert = t
+        .cmd()
         .env("SHELL", "/bin/bash")
+        .env_remove("NU_VERSION")
+        .env_remove("FISH_VERSION")
+        .args(["completions"])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    assert!(
+        out.contains("git-id"),
+        "expected a completion script:\n{out}"
+    );
+    // A bash script, not zsh — confirms $SHELL drove detection here.
+    assert!(!out.contains("#compdef"), "should be bash, not zsh:\n{out}");
+}
+
+#[test]
+fn completions_install_targets_all_detected_shells() {
+    // No shell argument: install for every shell on PATH. An isolated fake PATH
+    // keeps it hermetic (install never shells out, so PATH can be replaced).
+    let t = TestEnv::new();
+    let bin = t.fake_bin(&["zsh", "nu"]);
+    let assert = t
+        .cmd()
+        .env("PATH", &bin)
         .args(["completions", "install"])
         .assert()
         .success();
-    let f = t
-        .home
-        .join(".local/share/bash-completion/completions/git-id");
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
-        f.exists(),
-        "bash completion was not written via $SHELL detection"
+        t.home.join(".zfunc/_git-id").exists(),
+        "zsh completion missing:\n{out}"
+    );
+    assert!(
+        t.home
+            .join(".config/nushell/completions/git-id.nu")
+            .exists(),
+        "nushell completion missing:\n{out}"
+    );
+    assert!(out.contains("zsh completions"), "{out}");
+    assert!(out.contains("nushell completions"), "{out}");
+}
+
+#[test]
+fn completions_install_single_shell_targets_only_it() {
+    // An explicit shell installs just that one, ignoring what is on PATH.
+    let t = TestEnv::new();
+    t.ok(&["completions", "install", "zsh"]);
+    assert!(t.home.join(".zfunc/_git-id").exists());
+    assert!(
+        !t.home
+            .join(".config/nushell/completions/git-id.nu")
+            .exists(),
+        "should not have installed nushell"
+    );
+}
+
+#[test]
+fn completions_install_current_targets_only_the_running_shell() {
+    // --current installs just the detected shell. NU_VERSION makes detection
+    // deterministic (nushell) regardless of host or $SHELL.
+    let t = TestEnv::new();
+    let bin = t.fake_bin(&["zsh", "nu"]);
+    t.cmd()
+        .env("PATH", &bin)
+        .env("NU_VERSION", "0.99.0")
+        .args(["completions", "install", "--current"])
+        .assert()
+        .success();
+    assert!(
+        t.home
+            .join(".config/nushell/completions/git-id.nu")
+            .exists(),
+        "nushell (current) completion should be installed"
+    );
+    assert!(
+        !t.home.join(".zfunc/_git-id").exists(),
+        "--current should not install other detected shells"
+    );
+}
+
+#[test]
+fn completions_install_is_idempotent() {
+    let t = TestEnv::new();
+    let bin = t.fake_bin(&["zsh"]);
+    t.cmd()
+        .env("PATH", &bin)
+        .args(["completions", "install"])
+        .assert()
+        .success();
+    let assert = t
+        .cmd()
+        .env("PATH", &bin)
+        .args(["completions", "install"])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    assert!(
+        out.contains("already up to date"),
+        "a second install should be a no-op:\n{out}"
+    );
+}
+
+#[test]
+fn init_installs_completions_for_detected_shells() {
+    // init must keep git reachable, so prepend the fake shells to the real PATH.
+    let t = TestEnv::new();
+    let path = t.path_with_fake_bin(&["zsh", "nu"]);
+    t.cmd().env("PATH", path).args(["init"]).assert().success();
+    assert!(
+        t.home.join(".zfunc/_git-id").exists(),
+        "init did not install zsh completion"
+    );
+    assert!(
+        t.home
+            .join(".config/nushell/completions/git-id.nu")
+            .exists(),
+        "init did not install nushell completion"
+    );
+}
+
+#[test]
+fn doctor_reports_completion_status_per_shell() {
+    let t = TestEnv::new();
+    let path = t.path_with_fake_bin(&["zsh", "nu"]);
+    // Install only zsh; nushell is detected but its file is absent.
+    t.ok(&["completions", "install", "zsh"]);
+    let assert = t.cmd().env("PATH", path).args(["doctor"]).assert();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    assert!(
+        out.contains("zsh completion installed"),
+        "doctor should report zsh installed:\n{out}"
+    );
+    assert!(
+        out.contains("nushell completion not installed"),
+        "doctor should report nushell missing:\n{out}"
     );
 }
 

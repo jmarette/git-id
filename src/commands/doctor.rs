@@ -8,6 +8,7 @@ use crate::env::Env;
 use crate::paths::{self, display_pretty};
 use crate::{gitcfg, routes, store};
 
+use super::completions::{self, CompletionStatus};
 use super::{init, man};
 
 #[derive(Default)]
@@ -199,6 +200,32 @@ pub fn run(env: &Env) -> Result<ExitCode> {
             display_pretty(&path.to_string_lossy(), &env.home)
         )),
         None => {}
+    }
+
+    // For each shell on PATH, report whether git-id's completion file is in
+    // place and current. This only inspects the file git-id writes — it cannot
+    // see whether the activation line is wired into the shell's rc file, so for
+    // manual-activation shells we add a reminder rather than claim it is active.
+    for state in completions::completion_status(env) {
+        let name = completions::shell_display_name(state.shell);
+        let path = display_pretty(&state.path.to_string_lossy(), &env.home);
+        match state.status {
+            CompletionStatus::Installed => {
+                if state.needs_activation {
+                    d.ok(&format!(
+                        "{name} completion installed: {path} (ensure its activation line is in your shell rc)"
+                    ));
+                } else {
+                    d.ok(&format!("{name} completion installed: {path}"));
+                }
+            }
+            CompletionStatus::Stale => d.info(&format!(
+                "{name} completion at {path} is out of date — run `git-id completions install`"
+            )),
+            CompletionStatus::Missing => d.info(&format!(
+                "{name} completion not installed — run `git-id completions install`"
+            )),
+        }
     }
 
     println!();

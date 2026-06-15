@@ -388,6 +388,21 @@ pub fn remove(env: &Env, name: &str) -> Result<()> {
     fs::remove_file(&path).with_context(|| format!("cannot remove {}", path.display()))
 }
 
+/// Atomically write `contents` to `path` only if it differs from what is
+/// already there. Returns `true` when it wrote (the file was missing or held
+/// different content), `false` when the file already matched and was left
+/// untouched. A missing or unreadable file counts as "differs" and triggers a
+/// write, so callers get an idempotent install that still refreshes stale files.
+pub fn write_if_changed(path: &Path, contents: &str) -> Result<bool> {
+    if let Ok(existing) = fs::read_to_string(path) {
+        if existing == contents {
+            return Ok(false);
+        }
+    }
+    atomic_write(path, contents)?;
+    Ok(true)
+}
+
 /// Write `contents` to `path` atomically: temp file in the same directory,
 /// then rename over the target (creating parent directories as needed).
 pub fn atomic_write(path: &Path, contents: &str) -> Result<()> {
@@ -574,6 +589,20 @@ mod tests {
             gitcfg::get_file(&path, "user.name").unwrap().as_deref(),
             Some("Quote \" Back\\slash #1")
         );
+    }
+
+    #[test]
+    fn write_if_changed_skips_identical_content() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("f.txt");
+        // Missing file -> writes.
+        assert!(write_if_changed(&path, "one").unwrap());
+        // Same content -> no write.
+        assert!(!write_if_changed(&path, "one").unwrap());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "one");
+        // Different content -> writes again.
+        assert!(write_if_changed(&path, "two").unwrap());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "two");
     }
 
     #[test]
