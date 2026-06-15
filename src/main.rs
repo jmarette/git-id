@@ -25,6 +25,14 @@ fn main() -> ExitCode {
             };
         }
     }
+    // Rendering the man page is likewise HOME-free (a packager may run it in a
+    // minimal sandbox); installing it happens through `init`, which has an Env.
+    if let cli::Cmd::Man = &cli.command {
+        return match commands::man::print() {
+            Ok(code) => code,
+            Err(err) => fail(&err),
+        };
+    }
     let env = match env::Env::from_process() {
         Ok(env) => env,
         Err(err) => return fail(&err),

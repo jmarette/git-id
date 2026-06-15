@@ -918,6 +918,41 @@ fn completions_install_detects_shell_from_env() {
     );
 }
 
+#[test]
+fn man_prints_a_roff_page() {
+    let t = TestEnv::new();
+    let out = t.ok(&["man"]);
+    assert!(
+        out.contains(".TH git-id"),
+        "`man` should print roff:\n{out}"
+    );
+    assert!(out.contains("create"), "should list subcommands");
+}
+
+#[test]
+#[cfg(unix)]
+fn init_installs_the_man_page_and_uninstall_removes_it() {
+    let t = TestEnv::new();
+    // The test binary lives at `target/debug/git-id` (parent not `bin`), so the
+    // page lands in the XDG data dir the sandbox controls.
+    let page = t.home.join(".local/share/man/man1/git-id.1");
+
+    let out = t.ok(&["init"]);
+    assert!(
+        page.exists(),
+        "init should install the man page at {}",
+        page.display()
+    );
+    assert!(
+        out.contains("man page"),
+        "init should report installing it:\n{out}"
+    );
+    assert!(t.read(&page).contains(".TH git-id"));
+
+    t.ok(&["uninstall", "--yes"]);
+    assert!(!page.exists(), "uninstall should remove the man page");
+}
+
 // ---------------------------------------------------------------------------
 // input validation / injection
 

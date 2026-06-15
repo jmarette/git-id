@@ -56,6 +56,9 @@ pub enum Cmd {
     /// Print shell completions, or install them with `completions install`
     #[command(args_conflicts_with_subcommands = true)]
     Completions(CompletionsArgs),
+    /// Print the man page (roff). `git id init` installs it for you; a packager
+    /// can pipe it into a man directory.
+    Man,
 }
 
 #[derive(Args)]

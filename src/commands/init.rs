@@ -10,6 +10,8 @@ use crate::env::Env;
 use crate::paths::display_pretty;
 use crate::{gitcfg, paths, prompt, routes};
 
+use super::man;
+
 /// The global-level config files git actually reads and that git-id may have
 /// written to, in increasing precedence order, existing files only. Mirrors
 /// git: an explicit `GIT_CONFIG_GLOBAL` is the *only* global file; otherwise
@@ -174,6 +176,17 @@ pub fn run(env: &Env, args: &InitArgs) -> Result<ExitCode> {
     }
     if let Some(bak) = &backup.path {
         println!("Backed up the previous global config to: {}", pretty(bak));
+    }
+    // Install the man page so `man git-id` and `git id --help` (which git
+    // rewrites to `man git-id`) work without a separate command. Best-effort:
+    // a failure here must never fail setup.
+    match man::install_man_page(env) {
+        Ok(Some(path)) => println!(
+            "Installed the man page: {} (so `man git-id` and `git id --help` work)",
+            pretty(&path)
+        ),
+        Ok(None) => {}
+        Err(err) => eprintln!("warning: could not install the man page: {err:#}"),
     }
     match uco {
         Uco::Enabled => {
