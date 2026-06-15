@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `completions install` now prefers a directory the shell **autoloads**, so no
+  manual activation step is needed where one is available: nushell completions
+  go to its autoload directory (`$nu.user-autoload-dirs`), and zsh completions
+  go to a writable directory already on `$fpath` (e.g. a Homebrew
+  `site-functions` dir) when one exists. It falls back to the previous location
+  plus the one-time activation hint otherwise (a system zsh with no writable
+  `$fpath` entry, or an older nushell). bash and fish were already autoloaded.
+
 ## [0.4.0]
 
 ### Changed

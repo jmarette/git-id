@@ -158,15 +158,18 @@ impl TestEnv {
         String::from_utf8_lossy(&out.stdout).trim().to_string()
     }
 
-    /// Create a `fake-bin` dir under HOME holding empty, executable files named
-    /// after `bins`, and return it. Used as a PATH entry to fake which shells
-    /// are "installed" without depending on the host.
+    /// Create a `fake-bin` dir under HOME holding executable files named after
+    /// `bins`, and return it. Used as a PATH entry to fake which shells are
+    /// "installed" without depending on the host. The fakes are scripts that
+    /// exit non-zero, so any runtime probe of them (e.g. querying a shell's
+    /// autoload dirs) fails cleanly and the caller falls back — keeping tests
+    /// hermetic and off the real filesystem.
     pub fn fake_bin(&self, bins: &[&str]) -> PathBuf {
         let dir = self.home.join("fake-bin");
         fs::create_dir_all(&dir).unwrap();
         for name in bins {
             let p = dir.join(name);
-            fs::write(&p, "").unwrap();
+            fs::write(&p, "#!/bin/sh\nexit 1\n").unwrap();
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;

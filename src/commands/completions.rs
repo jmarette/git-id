@@ -1,6 +1,6 @@
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 
 use anyhow::{Result, bail};
 use clap::{CommandFactory, ValueEnum};
@@ -216,10 +216,78 @@ fn detect_installed_shells() -> Vec<CompletionShell> {
     detect_installed_shells_with(is_in_path)
 }
 
+/// Run `program args...` and return its stdout on a successful exit.
+fn capture(program: &str, args: &[&str]) -> Option<String> {
+    let out = Command::new(program).args(args).output().ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Parse newline-separated directory paths, dropping blank lines.
+fn parse_dir_lines(output: &str) -> Vec<PathBuf> {
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// First directory satisfying `usable`. Pure; the impurity (which dirs exist,
+/// which are writable) lives in the predicate the caller passes.
+fn first_usable_dir(dirs: &[PathBuf], usable: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    dirs.iter().find(|d| usable(d)).cloned()
+}
+
+/// Can a file be created in `dir` right now? Tested directly rather than from
+/// permission bits, which lie under ACLs and odd ownership.
+fn dir_is_writable(dir: &Path) -> bool {
+    dir.is_dir() && tempfile::NamedTempFile::new_in(dir).is_ok()
+}
+
+/// A nushell *user autoload* directory, if this nushell has them. The query
+/// only succeeds on versions that expose `$nu.user-autoload-dirs`, so a path
+/// here is proof the feature exists and a file dropped in is auto-sourced —
+/// no `source` line in `config.nu` needed.
+fn nu_autoload_dir() -> Option<PathBuf> {
+    let out = capture("nu", &["-c", "$nu.user-autoload-dirs | to text"])?;
+    parse_dir_lines(&out).into_iter().next()
+}
+
+/// A writable directory already on zsh's `$fpath` (queried with `-f` so user
+/// rc files don't taint it). `compinit` autoloads from `$fpath`, so a file
+/// there needs no `fpath+=`/activation. `None` when nothing writable is found.
+fn zsh_writable_fpath_dir() -> Option<PathBuf> {
+    let out = capture("zsh", &["-fc", "print -rl -- $fpath"])?;
+    first_usable_dir(&parse_dir_lines(&out), dir_is_writable)
+}
+
+/// Where a shell's completion file should be written. Prefers a directory the
+/// shell autoloads (nushell's autoload dir, a writable zsh `$fpath` entry) so
+/// no manual activation is needed; otherwise falls back to `completion_target`,
+/// which carries the one-time activation step.
+fn resolve_install_target(env: &Env, shell: CompletionShell) -> InstallTarget {
+    let fallback = || completion_target(shell, &env.home, &env.config_base, &env.data_base());
+    let autoloaded = |dir: PathBuf, file: &str| InstallTarget {
+        path: dir.join(file),
+        activation: None,
+    };
+    match shell {
+        CompletionShell::Nushell => nu_autoload_dir()
+            .map(|d| autoloaded(d, "git-id.nu"))
+            .unwrap_or_else(fallback),
+        CompletionShell::Zsh => zsh_writable_fpath_dir()
+            .map(|d| autoloaded(d, "_git-id"))
+            .unwrap_or_else(fallback),
+        _ => fallback(),
+    }
+}
+
 /// Write one shell's completion script, skipping the write when it is already
 /// up to date so re-runs (and `init`) stay quiet but upgrades still refresh.
 fn install_one(env: &Env, shell: CompletionShell) -> Result<()> {
-    let target = completion_target(shell, &env.home, &env.config_base, &env.data_base());
+    let target = resolve_install_target(env, shell);
     let wrote = store::write_if_changed(&target.path, &render(shell))?;
     let pretty = display_pretty(&target.path.to_string_lossy(), &env.home);
     if !wrote {
@@ -303,7 +371,7 @@ pub fn completion_status(env: &Env) -> Vec<CompletionState> {
     detect_installed_shells()
         .into_iter()
         .map(|shell| {
-            let target = completion_target(shell, &env.home, &env.config_base, &env.data_base());
+            let target = resolve_install_target(env, shell);
             let status = match std::fs::read_to_string(&target.path) {
                 Ok(existing) if existing == render(shell) => CompletionStatus::Installed,
                 Ok(_) => CompletionStatus::Stale,
@@ -380,6 +448,33 @@ mod tests {
         );
         // Nothing available -> empty.
         assert_eq!(detect_installed_shells_with(|_| false), vec![]);
+    }
+
+    #[test]
+    fn parse_dir_lines_trims_and_drops_blanks() {
+        let out = "/a/b\n  /c/d  \n\n/e\n";
+        assert_eq!(
+            parse_dir_lines(out),
+            vec![
+                PathBuf::from("/a/b"),
+                PathBuf::from("/c/d"),
+                PathBuf::from("/e")
+            ]
+        );
+    }
+
+    #[test]
+    fn first_usable_dir_picks_first_match() {
+        let dirs = [
+            PathBuf::from("/no"),
+            PathBuf::from("/yes"),
+            PathBuf::from("/also"),
+        ];
+        assert_eq!(
+            first_usable_dir(&dirs, |d| d.starts_with("/yes") || d.starts_with("/also")),
+            Some(PathBuf::from("/yes"))
+        );
+        assert_eq!(first_usable_dir(&dirs, |_| false), None);
     }
 
     #[test]

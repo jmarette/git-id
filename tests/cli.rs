@@ -894,8 +894,17 @@ fn completions_install_writes_autoloaded_file() {
 
 #[test]
 fn completions_install_reports_manual_step_for_nushell() {
+    // With no autoloading nushell reachable (the fake one fails the autoload-dir
+    // probe), install falls back to the config.nu location and prints the hint.
     let t = TestEnv::new();
-    let out = t.ok(&["completions", "install", "nushell"]);
+    let bin = t.fake_bin(&["nu"]);
+    let assert = t
+        .cmd()
+        .env("PATH", &bin)
+        .args(["completions", "install", "nushell"])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     let f = t.home.join(".config/nushell/completions/git-id.nu");
     assert!(f.exists(), "nushell completion file was not written");
     assert!(out.contains("config.nu"), "missing activation hint:\n{out}");
@@ -952,9 +961,16 @@ fn completions_install_targets_all_detected_shells() {
 
 #[test]
 fn completions_install_single_shell_targets_only_it() {
-    // An explicit shell installs just that one, ignoring what is on PATH.
+    // An explicit shell installs just that one, ignoring what is on PATH. The
+    // fake (failing) zsh makes target resolution fall back to ~/.zfunc, keeping
+    // the test off the real filesystem.
     let t = TestEnv::new();
-    t.ok(&["completions", "install", "zsh"]);
+    let bin = t.fake_bin(&["zsh", "nu"]);
+    t.cmd()
+        .env("PATH", &bin)
+        .args(["completions", "install", "zsh"])
+        .assert()
+        .success();
     assert!(t.home.join(".zfunc/_git-id").exists());
     assert!(
         !t.home
@@ -1032,9 +1048,15 @@ fn init_installs_completions_for_detected_shells() {
 fn doctor_reports_completion_status_per_shell() {
     let t = TestEnv::new();
     let path = t.path_with_fake_bin(&["zsh", "nu"]);
-    // Install only zsh; nushell is detected but its file is absent.
-    t.ok(&["completions", "install", "zsh"]);
-    let assert = t.cmd().env("PATH", path).args(["doctor"]).assert();
+    // Install only zsh; nushell is detected but its file is absent. Both steps
+    // use the same fake (failing) shells so target resolution falls back to the
+    // sandbox consistently (zsh -> ~/.zfunc), instead of the host's real shells.
+    t.cmd()
+        .env("PATH", &path)
+        .args(["completions", "install", "zsh"])
+        .assert()
+        .success();
+    let assert = t.cmd().env("PATH", &path).args(["doctor"]).assert();
     let out = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
     assert!(
         out.contains("zsh completion installed"),
