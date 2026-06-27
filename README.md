@@ -129,6 +129,28 @@ $ git id create work --name "Jane Doe" --email jane@work.example \
 On `edit`, `--no-format` and `--no-ssh` remove those settings; `--signing-key ""`
 removes the key. Anything you add to a fragment by hand is preserved.
 
+`core.sshCommand` only drives Git's own transport (`clone`, `fetch`, `push`). A
+bare `ssh -T git@gitlab.com` ignores Git config and always uses your default
+key, so to check a specific identity's key, point `ssh` at it explicitly:
+
+```console
+$ ssh -i ~/.ssh/id_work -o IdentitiesOnly=yes -T git@gitlab.com
+```
+
+That per-identity key is what lets **two accounts on the same host** coexist. A
+given SSH key can only belong to one account (GitHub and GitLab reject a key
+already registered elsewhere), so give each account its own key and route them
+by directory:
+
+```console
+$ git id create work  --email you@work.example  --ssh-key ~/.ssh/id_work
+$ git id create perso --email you@perso.example --ssh-key ~/.ssh/id_perso
+$ git id use work  ~/dev/work
+$ git id use perso ~/dev/perso
+```
+
+A plain `git push` then uses the right account from wherever the repo lives.
+
 ### Scripting
 
 `list`, `show` and `which` take `--json`:
